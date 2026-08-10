@@ -134,6 +134,7 @@ function Test-PythonCandidate {
         $probeCode = (
             "import json,sys; print(json.dumps({" +
             "'ok': True, 'major': sys.version_info[0], " +
+            "'minor': sys.version_info[1], " +
             "'executable': sys.executable}))"
         )
         $probeOutput = & $FilePath @PrefixArguments '-c' $probeCode 2>$null
@@ -145,15 +146,22 @@ function Test-PythonCandidate {
         $probeLine = @($probeOutput) | Select-Object -Last 1
         $probe = $probeLine | ConvertFrom-Json
         $resolvedExecutable = [string]$probe.executable
+        $versionMajor = [int]$probe.major
+        $versionMinor = [int]$probe.minor
+        $versionIsCompatible = (
+            ($versionMajor -gt 3) -or
+            ($versionMajor -eq 3 -and $versionMinor -ge 10)
+        )
         if (
             $probe.ok -eq $true -and
-            [int]$probe.major -ge 3 -and
+            $versionIsCompatible -and
             -not [string]::IsNullOrWhiteSpace($resolvedExecutable) -and
             (Test-Path -LiteralPath $resolvedExecutable -PathType Leaf)
         ) {
             return [pscustomobject]@{
                 FilePath = $resolvedExecutable
-                VersionMajor = [int]$probe.major
+                VersionMajor = $versionMajor
+                VersionMinor = $versionMinor
             }
         }
     }
@@ -193,7 +201,7 @@ function Find-VerifiedPython {
     }
 
     throw (
-        'A working Python 3 interpreter was not found. Checked ' +
+        'A working Python 3.10+ interpreter was not found. Checked ' +
         'C:\Python313\python.exe, the python command, and py -3.'
     )
 }

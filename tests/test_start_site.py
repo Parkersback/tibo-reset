@@ -239,6 +239,88 @@ if ($errors.Count -gt 0) {{
         )
         self.assertEqual(0, result.returncode, result.stderr)
 
+    def test_python_candidate_rejects_39_and_accepts_310(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="tibo-python-version-") as temp:
+            temp_root = Path(temp)
+            fake_candidates: dict[str, Path] = {}
+            for label, minor in (("python39", 9), ("python310", 10)):
+                candidate = temp_root / f"{label}.cmd"
+                payload = json.dumps(
+                    {
+                        "ok": True,
+                        "major": 3,
+                        "minor": minor,
+                        "executable": str(PYTHON),
+                    }
+                )
+                candidate.write_text(
+                    f"@echo off\r\necho {payload}\r\nexit /b 0\r\n",
+                    encoding="ascii",
+                )
+                fake_candidates[label] = candidate
+
+            def ps_literal(path: Path) -> str:
+                return str(path).replace("'", "''")
+
+            probe_script = temp_root / "probe-version.ps1"
+            probe_script.write_text(
+                rf"""
+$tokens = $null
+$parseErrors = $null
+$launcherAst = [System.Management.Automation.Language.Parser]::ParseFile(
+    '{ps_literal(LAUNCHER)}', [ref]$tokens, [ref]$parseErrors
+)
+if ($parseErrors.Count -gt 0) {{ throw $parseErrors[0].Message }}
+$candidateFunction = $launcherAst.Find({{
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $node.Name -eq 'Test-PythonCandidate'
+}}, $true)
+if ($null -eq $candidateFunction) {{
+    throw 'Test-PythonCandidate function not found'
+}}
+Invoke-Expression $candidateFunction.Extent.Text
+$python39 = Test-PythonCandidate -FilePath '{ps_literal(fake_candidates["python39"])}'
+$python310 = Test-PythonCandidate -FilePath '{ps_literal(fake_candidates["python310"])}'
+[pscustomobject]@{{
+    rejected39 = $null -eq $python39
+    accepted310 = $null -ne $python310
+    acceptedMajor = $python310.VersionMajor
+    acceptedMinor = $python310.VersionMinor
+}} | ConvertTo-Json -Compress
+""",
+                encoding="utf-8-sig",
+            )
+            result = subprocess.run(
+                [
+                    str(POWERSHELL),
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(probe_script),
+                ],
+                capture_output=True,
+                text=True,
+                errors="replace",
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        observed = json.loads(result.stdout.strip())
+        self.assertTrue(observed["rejected39"])
+        self.assertTrue(observed["accepted310"])
+        self.assertEqual(3, observed["acceptedMajor"])
+        self.assertEqual(10, observed["acceptedMinor"])
+
+    def test_python_requirement_is_clear_in_launcher_and_readme(self) -> None:
+        script = LAUNCHER.read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("Python 3.10+", script)
+        self.assertIn("Python 3.10+", readme)
+
     def test_cmd_wrapper_forwards_arguments_and_pauses_only_on_failure(self) -> None:
         wrapper = CMD_LAUNCHER.read_text(encoding="utf-8-sig")
 
