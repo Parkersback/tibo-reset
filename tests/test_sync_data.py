@@ -1,5 +1,5 @@
 from contextlib import contextmanager, redirect_stdout
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import StringIO
 import json
@@ -10,6 +10,17 @@ import unittest
 from unittest.mock import patch
 
 from scripts import sync_data
+
+
+ROOT = Path(__file__).resolve().parents[1]
+TWEET_FIELDS = (
+    "timestamp",
+    "author",
+    "text",
+    "source",
+    "url",
+    "authority_score",
+)
 
 
 def prediction_payload(marker: str = "fresh") -> dict:
@@ -24,11 +35,61 @@ def prediction_payload(marker: str = "fresh") -> dict:
     }
 
 
+def tweet_payload(**overrides) -> dict:
+    payload = {
+        "timestamp": "2026-01-01T00:00:00Z",
+        "author": "Tibo",
+        "text": "A safe reset signal.",
+        "source": "tibo_rss",
+        "url": "https://x.com/thsottiaux/status/123",
+        "authority_score": 1.0,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def valid_payload_for(source: sync_data.Source):
     if source.name == "prediction.json":
         return prediction_payload()
+    if source.name == "prediction_history.json":
+        return [
+            {
+                "prediction_time": "2026-01-01T00:00:00Z",
+                "prediction": prediction_payload()["prediction"],
+                "signals": {},
+                "actual_result": None,
+                "resolved_at": None,
+            }
+        ]
+    if source.name == "tweets.json":
+        return [tweet_payload()]
     if source.name == "model_performance.json":
-        return {"total_predictions": 12, "horizons": {}}
+        return {
+            "total_predictions": 12,
+            "resolved_predictions": 10,
+            "overall_brier_score": 0.2,
+            "overall_accuracy": 0.8,
+            "horizons": [
+                {
+                    "horizon_hours": 5,
+                    "total": 10,
+                    "brier_score": 0.2,
+                    "accuracy": 0.8,
+                    "calibration_error": 0.1,
+                    "bins": [],
+                }
+            ],
+            "updated_at": "2026-01-01T00:00:00Z",
+        }
+    if source.name == "reset_history.json":
+        return [
+            {
+                "reset_time": "2026-01-01T00:00:00Z",
+                "source": "openai_status",
+                "confidence": 1.0,
+                "notes": "Verified reset.",
+            }
+        ]
     if source.expected_type is list:
         return [
             {
@@ -88,6 +149,14 @@ class FetchJsonTests(unittest.TestCase):
             with self.assertRaises(json.JSONDecodeError):
                 sync_data.fetch_json(source, timeout=2.0)
 
+    def test_fetch_json_rejects_body_larger_than_eight_mib(self) -> None:
+        oversized_body = b"x" * (8 * 1024 * 1024 + 1)
+        with local_json_server(oversized_body) as (url, _handler):
+            source = sync_data.Source("payload.json", url)
+
+            with self.assertRaisesRegex(ValueError, "8 MiB"):
+                sync_data.fetch_json(source, timeout=5.0)
+
 
 class ValidationTests(unittest.TestCase):
     def test_validate_payload_rejects_wrong_top_level_type(self) -> None:
@@ -126,8 +195,13 @@ class ValidationTests(unittest.TestCase):
     def test_default_list_sources_define_stable_item_contracts(self) -> None:
         expected_contracts = {
             "prediction_history.json": ("prediction_time", "prediction"),
-            "tweets.json": ("timestamp", "text"),
-            "reset_history.json": ("reset_time", "source"),
+            "tweets.json": TWEET_FIELDS,
+            "reset_history.json": (
+                "reset_time",
+                "source",
+                "confidence",
+                "notes",
+            ),
         }
 
         actual_contracts = {
@@ -137,6 +211,22 @@ class ValidationTests(unittest.TestCase):
         }
 
         self.assertEqual(expected_contracts, actual_contracts)
+
+    def test_default_list_sources_have_reasonable_maximum_lengths(self) -> None:
+        maximums = {
+            source.name: source.max_items
+            for source in sync_data.DEFAULT_SOURCES
+            if source.expected_type is list
+        }
+
+        self.assertEqual(
+            {
+                "prediction_history.json": 10_000,
+                "tweets.json": 500,
+                "reset_history.json": 2_000,
+            },
+            maximums,
+        )
 
     def test_validate_payload_rejects_non_object_list_item(self) -> None:
         source = next(
@@ -158,6 +248,179 @@ class ValidationTests(unittest.TestCase):
             with self.subTest(source=source.name, missing_key=missing_key):
                 with self.assertRaisesRegex(ValueError, missing_key):
                     sync_data.validate_payload(source, payload)
+
+    def test_validate_payload_rejects_list_over_source_limit(self) -> None:
+        source = sync_data.Source(
+            "array.json",
+            "https://example.test",
+            expected_type=list,
+            max_items=1,
+        )
+
+        with self.assertRaisesRegex(ValueError, "at most 1"):
+            sync_data.validate_payload(source, [{}, {}])
+
+    def test_prediction_probabilities_reject_wrong_nan_and_out_of_range(self) -> None:
+        source = next(
+            source
+            for source in sync_data.DEFAULT_SOURCES
+            if source.name == "prediction.json"
+        )
+        for bad_value in (True, "0.5", float("nan"), -0.01, 1.01):
+            payload = prediction_payload()
+            payload["prediction"]["within_5h"] = bad_value
+            with self.subTest(bad_value=bad_value):
+                with self.assertRaisesRegex(ValueError, "within_5h"):
+                    sync_data.validate_payload(source, payload)
+
+    def test_prediction_history_requires_valid_prediction_and_iso_time(self) -> None:
+        source = next(
+            source
+            for source in sync_data.DEFAULT_SOURCES
+            if source.name == "prediction_history.json"
+        )
+        invalid_payloads = (
+            [{**valid_payload_for(source)[0], "prediction_time": "not-iso"}],
+            [
+                {
+                    **valid_payload_for(source)[0],
+                    "prediction": {
+                        "within_5h": 0.1,
+                        "within_24h": float("nan"),
+                        "within_48h": 0.8,
+                    },
+                }
+            ],
+        )
+        for payload in invalid_payloads:
+            with self.subTest(payload=payload):
+                with self.assertRaises(ValueError):
+                    sync_data.validate_payload(source, payload)
+
+    def test_model_performance_rejects_invalid_totals_metrics_and_horizons(self) -> None:
+        source = next(
+            source
+            for source in sync_data.DEFAULT_SOURCES
+            if source.name == "model_performance.json"
+        )
+        cases = (
+            ("total_predictions", True),
+            ("overall_accuracy", 1.1),
+            ("horizons", {}),
+        )
+        for key, value in cases:
+            payload = valid_payload_for(source)
+            payload[key] = value
+            with self.subTest(key=key, value=value):
+                with self.assertRaisesRegex(ValueError, key):
+                    sync_data.validate_payload(source, payload)
+
+    def test_reset_history_rejects_invalid_time_confidence_and_long_notes(self) -> None:
+        source = next(
+            source
+            for source in sync_data.DEFAULT_SOURCES
+            if source.name == "reset_history.json"
+        )
+        cases = (
+            ("reset_time", "not-iso"),
+            ("confidence", float("nan")),
+            ("notes", "x" * 501),
+            ("source", ""),
+        )
+        for key, value in cases:
+            payload = valid_payload_for(source)
+            payload[0][key] = value
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(ValueError, key):
+                    sync_data.validate_payload(source, payload)
+
+
+class TweetSecurityTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.source = next(
+            source
+            for source in sync_data.DEFAULT_SOURCES
+            if source.name == "tweets.json"
+        )
+
+    def test_canonicalize_tweets_normalizes_and_truncates_public_excerpt(self) -> None:
+        raw = tweet_payload(
+            text="  " + ("x" * 400) + "\n\t",
+            extra_private_field="must not be mirrored",
+        )
+
+        canonical = sync_data.canonicalize_payload(self.source, [raw])
+
+        self.assertEqual(set(TWEET_FIELDS), set(canonical[0]))
+        self.assertNotIn("extra_private_field", canonical[0])
+        self.assertLessEqual(len(canonical[0]["text"]), 361)
+        self.assertTrue(canonical[0]["text"].endswith("…"))
+        self.assertNotIn("\n", canonical[0]["text"])
+        sync_data.validate_payload(self.source, canonical)
+
+    def test_tweets_reject_malicious_lookalike_domains(self) -> None:
+        payloads = (
+            [tweet_payload(url="https://x.com.evil.test/thsottiaux/status/1")],
+            [
+                tweet_payload(
+                    source="community_rss",
+                    author="/u/example",
+                    url="https://reddit.com.evil.test/r/chatgpt/1",
+                )
+            ],
+            [
+                tweet_payload(
+                    source="openai_rss",
+                    author="OpenAI",
+                    url="https://openai.com.evil.test/news",
+                )
+            ],
+        )
+        for payload in payloads:
+            with self.subTest(url=payload[0]["url"]):
+                with self.assertRaisesRegex(ValueError, "url"):
+                    sync_data.validate_payload(self.source, payload)
+
+    def test_tweets_reject_source_impersonation_and_unknown_sources(self) -> None:
+        payloads = (
+            [tweet_payload(author="OpenAI")],
+            [
+                tweet_payload(
+                    source="openai_status",
+                    author="Tibo",
+                    url="https://status.openai.com/incidents/1",
+                )
+            ],
+            [tweet_payload(source="tibo_rss_official")],
+        )
+        for payload in payloads:
+            with self.subTest(source=payload[0]["source"], author=payload[0]["author"]):
+                with self.assertRaises(ValueError):
+                    sync_data.validate_payload(self.source, payload)
+
+    def test_tweets_reject_timestamp_more_than_24_hours_in_future(self) -> None:
+        future = datetime.now(timezone.utc) + timedelta(hours=25)
+        payload = [tweet_payload(timestamp=future.isoformat().replace("+00:00", "Z"))]
+
+        with self.assertRaisesRegex(ValueError, "timestamp"):
+            sync_data.validate_payload(self.source, payload)
+
+    def test_tweets_accept_valid_community_and_official_sources(self) -> None:
+        payload = [
+            tweet_payload(
+                source="community_rss",
+                author="/u/example",
+                url="https://www.reddit.com/r/chatgpt/comments/1",
+                authority_score=0.5,
+            ),
+            tweet_payload(
+                source="openai_status",
+                author="OpenAI Status",
+                url="https://status.openai.com/incidents/1",
+            ),
+        ]
+
+        sync_data.validate_payload(self.source, payload)
 
 
 class AtomicWriteTests(unittest.TestCase):
@@ -184,8 +447,8 @@ class SyncAllTests(unittest.TestCase):
                 required_keys=("updated_at", "prediction"),
             ),
             sync_data.Source(
-                "tweets.json",
-                "https://example.test/tweets.json",
+                "items.json",
+                "https://example.test/items.json",
                 expected_type=list,
                 item_required_keys=("id",),
             ),
@@ -197,7 +460,7 @@ class SyncAllTests(unittest.TestCase):
     def test_successful_sync_writes_every_fresh_payload(self) -> None:
         payloads = {
             "prediction.json": prediction_payload(),
-            "tweets.json": [{"id": "tweet-1"}],
+            "items.json": [{"id": "item-1"}],
         }
 
         with patch.object(
@@ -243,6 +506,56 @@ class SyncAllTests(unittest.TestCase):
         self.assertIn("offline", status["sources"][0]["error"])
         self.assertFalse((self.output_dir / self.sources[0].name).exists())
 
+    def test_malicious_fresh_tweets_do_not_overwrite_valid_cache(self) -> None:
+        source = next(
+            source
+            for source in sync_data.DEFAULT_SOURCES
+            if source.name == "tweets.json"
+        )
+        self.output_dir.mkdir(parents=True)
+        target = self.output_dir / source.name
+        old_payload = [tweet_payload(text="known safe cache")]
+        old_text = json.dumps(old_payload, ensure_ascii=False, indent=2) + "\n"
+        target.write_text(old_text, encoding="utf-8")
+        malicious = [
+            tweet_payload(
+                text="phishing payload",
+                url="https://x.com.attacker.example/thsottiaux/status/1",
+            )
+        ]
+
+        with patch.object(sync_data, "fetch_json", return_value=malicious):
+            succeeded = sync_data.sync_all(self.output_dir, (source,))
+
+        self.assertTrue(succeeded)
+        self.assertEqual(old_text, target.read_text(encoding="utf-8"))
+        status = json.loads((self.output_dir / "sync-status.json").read_text(encoding="utf-8"))
+        self.assertEqual("degraded", status["overall_status"])
+        self.assertEqual("cached", status["sources"][0]["status"])
+
+    def test_sync_writes_only_canonicalized_tweet_excerpt(self) -> None:
+        source = next(
+            source
+            for source in sync_data.DEFAULT_SOURCES
+            if source.name == "tweets.json"
+        )
+        raw = [
+            tweet_payload(
+                text="x" * 500,
+                upstream_metadata={"private": "drop"},
+            )
+        ]
+
+        with patch.object(sync_data, "fetch_json", return_value=raw):
+            succeeded = sync_data.sync_all(self.output_dir, (source,))
+
+        self.assertTrue(succeeded)
+        stored = json.loads((self.output_dir / source.name).read_text(encoding="utf-8"))
+        self.assertEqual(set(TWEET_FIELDS), set(stored[0]))
+        self.assertNotIn("upstream_metadata", stored[0])
+        self.assertLessEqual(len(stored[0]["text"]), 361)
+        self.assertTrue(stored[0]["text"].endswith("…"))
+
     def test_fetch_failure_rejects_parseable_but_invalid_cache(self) -> None:
         source = self.sources[0]
         self.output_dir.mkdir(parents=True)
@@ -287,6 +600,22 @@ class SyncAllTests(unittest.TestCase):
                 },
                 entry,
             )
+
+
+class RealMirrorContractTests(unittest.TestCase):
+    def test_checked_in_real_output_passes_every_strict_source_contract(self) -> None:
+        data_dir = ROOT / "site" / "data"
+        for source in sync_data.DEFAULT_SOURCES:
+            with self.subTest(source=source.name):
+                path = data_dir / source.name
+                self.assertLessEqual(path.stat().st_size, 8 * 1024 * 1024)
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                sync_data.validate_payload(source, payload)
+
+        tweets = json.loads((data_dir / "tweets.json").read_text(encoding="utf-8"))
+        self.assertTrue(tweets)
+        self.assertTrue(all(set(item) == set(TWEET_FIELDS) for item in tweets))
+        self.assertLessEqual(max(len(item["text"]) for item in tweets), 361)
 
 
 class CommandLineTests(unittest.TestCase):
