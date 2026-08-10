@@ -1,0 +1,57 @@
+name: Deploy Tibo Reset to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+  schedule:
+    - cron: '7,27,47 * * * *'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v6
+
+      - name: Synchronize public data mirror
+        run: python scripts/sync_data.py --output-dir site/data --timeout 20
+
+      - name: Run fast verification suite
+        run: |
+          python -m unittest discover -s tests -p "test_*.py"
+          python tests/check_static.py
+          node --check site/app.js
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: ./site
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
