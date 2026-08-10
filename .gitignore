@@ -1,5 +1,6 @@
 .worktrees/
 .runtime/
+output/
 __pycache__/
 *.py[cod]
 site/data/*.tmp
