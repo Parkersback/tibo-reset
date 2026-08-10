@@ -6,7 +6,10 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
 WORKFLOW = ROOT / ".github" / "workflows" / "pages.yml"
+DEPENDABOT = ROOT / ".github" / "dependabot.yml"
 NOJEKYLL = ROOT / "site" / ".nojekyll"
+THIRD_PARTY_NOTICE = ROOT / "THIRD_PARTY_NOTICES.md"
+DEPLOYED_NOTICE = ROOT / "site" / "NOTICE.txt"
 
 SOURCE_URLS = (
     "https://willtiboreset.xyz/data/prediction.json",
@@ -15,6 +18,14 @@ SOURCE_URLS = (
     "https://willtiboreset.xyz/data/model_performance.json",
     "https://raw.githubusercontent.com/EvanProgramming/willtiboreset/main/data/reset_history.json",
 )
+
+ACTION_PINS = {
+    "actions/checkout": ("3d3c42e5aac5ba805825da76410c181273ba90b1", "v7"),
+    "actions/setup-python": ("ece7cb06caefa5fff74198d8649806c4678c61a1", "v6"),
+    "actions/configure-pages": ("45bfe0192ca1faeb007ade9deae92b16b8254a0d", "v6"),
+    "actions/upload-pages-artifact": ("fc324d3547104276b827a68afc52ff2a11cc49c9", "v5"),
+    "actions/deploy-pages": ("cd2ce8fcbc39b97be8ca5fce6e763baed58fa128", "v5"),
+}
 
 
 class ReadmeContractTests(unittest.TestCase):
@@ -83,6 +94,15 @@ class ReadmeContractTests(unittest.TestCase):
         ):
             self.assertIn(token, self.readme)
 
+    def test_notice_and_upstream_license_boundary_are_linked(self) -> None:
+        for token in (
+            "[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)",
+            "[site/NOTICE.txt](site/NOTICE.txt)",
+            "无可核验的 LICENSE 文件",
+            "不依赖上游代码许可",
+        ):
+            self.assertIn(token, self.readme)
+
 
 class PagesWorkflowContractTests(unittest.TestCase):
     @classmethod
@@ -112,32 +132,41 @@ class PagesWorkflowContractTests(unittest.TestCase):
         jobs = self.workflow.split("\njobs:\n", 1)[1]
         self.assertEqual(["deploy"], re.findall(r"(?m)^  ([\w-]+):\s*$", jobs))
 
-    def test_deploy_job_environment_timeout_and_action_versions(self) -> None:
+    def test_deploy_job_environment_and_immutable_action_pins(self) -> None:
         for token in (
             "runs-on: ubuntu-latest",
             "timeout-minutes:",
             "name: github-pages",
             "url: ${{ steps.deployment.outputs.page_url }}",
-            "actions/checkout@v7",
-            "actions/setup-python@v6",
             "python-version: '3.13'",
-            "actions/configure-pages@v6",
-            "actions/upload-pages-artifact@v5",
             "path: ./site",
-            "actions/deploy-pages@v5",
             "id: deployment",
             "persist-credentials: false",
         ):
             self.assertIn(token, self.workflow)
 
-    def test_sync_and_fast_tests_run_before_upload(self) -> None:
+        for action, (sha, version) in ACTION_PINS.items():
+            self.assertRegex(
+                self.workflow,
+                rf"(?m)^\s*uses:\s*{re.escape(action)}@{sha}\s+# {version}\s*$",
+            )
+        uses_refs = re.findall(r"(?m)^\s*uses:\s*([^\s#]+)", self.workflow)
+        self.assertEqual(len(ACTION_PINS), len(uses_refs))
+        for uses_ref in uses_refs:
+            self.assertRegex(uses_ref, r"^[^@]+@[0-9a-f]{40}$")
+        self.assertNotRegex(self.workflow, r"(?m)^\s*uses:\s*[^\s]+@v\d+")
+
+    def test_fresh_gate_and_fast_tests_run_before_upload(self) -> None:
         required_steps = (
             "python scripts/sync_data.py --output-dir site/data --timeout 20",
+            'Path("site/data/sync-status.json")',
+            'status.get("overall_status") != "ok"',
+            "raise SystemExit",
             "python -m unittest discover -s tests -p \"test_*.py\"",
             "python tests/check_static.py",
             "node --check site/app.js",
-            "actions/upload-pages-artifact@v5",
-            "actions/deploy-pages@v5",
+            "actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9",
+            "actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128",
         )
         positions = [self.workflow.index(token) for token in required_steps]
         self.assertEqual(sorted(positions), positions)
@@ -157,6 +186,42 @@ class PagesWorkflowContractTests(unittest.TestCase):
             "api.twitter.com",
         ):
             self.assertNotIn(forbidden, self.workflow)
+
+
+class SupplyChainAndNoticeContractTests(unittest.TestCase):
+    def test_dependabot_reviews_github_actions_weekly_only(self) -> None:
+        self.assertTrue(DEPENDABOT.is_file(), ".github/dependabot.yml is required")
+        dependabot = DEPENDABOT.read_text(encoding="utf-8")
+        for token in (
+            "version: 2",
+            'package-ecosystem: "github-actions"',
+            'directory: "/"',
+            "interval: \"weekly\"",
+        ):
+            self.assertIn(token, dependabot)
+        self.assertEqual(1, dependabot.count("package-ecosystem:"))
+
+    def test_root_and_deployed_notices_cover_sources_rights_and_contact(self) -> None:
+        self.assertTrue(THIRD_PARTY_NOTICE.is_file(), "root notice is required")
+        self.assertTrue(DEPLOYED_NOTICE.is_file(), "deployed notice is required")
+        for notice_path in (THIRD_PARTY_NOTICE, DEPLOYED_NOTICE):
+            notice = notice_path.read_text(encoding="utf-8")
+            for source_url in SOURCE_URLS:
+                self.assertIn(source_url, notice)
+            for token in (
+                "归原作者或权利人",
+                "不主张其权利",
+                "不授予许可",
+                "不超过 360 个字符",
+                "直链",
+                "预测解释",
+                "未复制上游代码或视觉",
+                "非官方",
+                "无隶属或背书",
+                "issue",
+                "删除或更正",
+            ):
+                self.assertIn(token, notice)
 
 
 class PagesArtifactContractTests(unittest.TestCase):

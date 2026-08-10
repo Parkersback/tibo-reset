@@ -1,0 +1,26 @@
+# 第三方数据与内容声明
+
+`Tibo Reset` 为非官方信息展示项目，与 OpenAI、Thibault Sottiaux、`willtiboreset.xyz` 及下列数据来源无隶属或背书关系。
+
+## 公开数据来源
+
+本站同步以下五个公开 JSON 端点：
+
+1. <https://willtiboreset.xyz/data/prediction.json>
+2. <https://willtiboreset.xyz/data/prediction_history.json>
+3. <https://willtiboreset.xyz/data/tweets.json>
+4. <https://willtiboreset.xyz/data/model_performance.json>
+5. <https://raw.githubusercontent.com/EvanProgramming/willtiboreset/main/data/reset_history.json>
+
+## 权利与使用边界
+
+- 第三方文字摘录、名称、链接及数据所涉及的权利归原作者或权利人；本站不主张其权利，也不授予许可或任何第三方内容授权。
+- 本站仅为预测解释而镜像不超过 360 个字符的短摘录及其直链，不把摘录包装为本站原创内容，也不用于冒充原作者。
+- 本项目未复制上游代码或视觉，仅使用公开 JSON 数据端点，并以独立编写的同步器和界面进行结构校验、缓存与展示。
+- 上游模型指标与预测未经本站独立验证；预测仅供娱乐和信息参考。
+
+参考数据的上游仓库目前没有可核验的 `LICENSE` 文件。因此，本项目不依赖或主张任何上游代码许可，也不复制、修改或再分发其代码。
+
+## 删除、更正与联系
+
+如原作者或权利人希望删除或更正摘录、链接或归属信息，请通过仓库 [issue](https://github.com/Parkersback/tibo-reset/issues) 提交具体 URL 与说明；维护者会核对并处理。

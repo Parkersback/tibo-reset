@@ -77,6 +77,12 @@ site/app.js <- 相对路径 ./data/*.json <- 本地服务器或 GitHub Pages
 
 这些端点属于上游公开数据来源，本仓库只做镜像、结构校验和展示。推文信号是上游已经公开的 JSON，不是本站调用实时 X API 获得的内容。
 
+### 第三方内容与许可边界
+
+完整权利与来源说明见根目录的 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)；部署产物内同时包含纯文本版 [site/NOTICE.txt](site/NOTICE.txt)。第三方短摘录及数据的权利归原作者或权利人，本站不主张其权利，也不授予第三方内容许可。
+
+参考数据的上游仓库目前无可核验的 LICENSE 文件，因此本项目不依赖上游代码许可，也未复制、修改或再分发上游代码或视觉资产。
+
 ## 浏览器通知限制
 
 浏览器通知必须由用户点击按钮主动授权，并要求浏览器支持 Notification API，页面运行在 HTTPS 或 localhost。拒绝权限、浏览器/系统关闭通知、隐私模式限制等情况都会让通知不可用。
@@ -99,7 +105,7 @@ node --check site/app.js
 
 `.github/workflows/pages.yml` 使用 GitHub Pages 官方 Actions。在推送到 `main`、手动触发，以及每小时 UTC 的 7、27、47 分运行；这相当于约每 20 分钟一次并避开整点。GitHub 计划任务可能排队或延迟，并不是实时调度保证。
 
-工作流使用 Python 3.13，先执行同步命令；同步失败会让 job 失败，因此不会上传或部署。同步成功后仍需通过单元测试、静态合同和 Node 语法检查，最后才上传 `./site`。工作流不提交数据、不执行 `git push`、不需要仓库 secrets，也不访问 X API。
+工作流使用 Python 3.13，先执行同步命令，再读取 `site/data/sync-status.json`。只有 `overall_status` 严格等于 `ok` 才继续；即使同步器因存在旧缓存而返回成功，`degraded` 或 cached 降级也会让 job 非零退出，保留上一版 Pages，不允许仓库旧缓存覆盖更新的线上版本。fresh gate 通过后仍需完成单元测试、静态合同和 Node 语法检查，最后才上传 `./site`。工作流不提交数据、不执行 `git push`、不需要仓库 secrets，也不访问 X API。
 
 首次公开发布需要在仓库 Pages 设置中选择 **GitHub Actions** 作为来源，实际建仓与线上验证属于 Task 7。GitHub 可能在仓库长期无活动后自动停用计划工作流；维护者应检查 Actions 状态，并可用 `workflow_dispatch` 手动刷新与部署。
 
