@@ -617,10 +617,18 @@
       return false;
     }
     var notes = safeString(item.notes).toLowerCase();
+    var source = safeString(item.source).toLowerCase();
     if (!notes) {
       return false;
     }
-    return !/(?:banked|boost|unlock)/i.test(notes);
+    if (/(?:banked|boost|unlock)/i.test(notes + ' ' + source)) {
+      return false;
+    }
+    if (/\bglobal\b.*\breset\b/i.test(notes)) {
+      return true;
+    }
+    return !/(?:^|[\s_-])(?:regular[\s_-]+)?weekly[\s_-]+(?:refresh(?:\s*\/\s*reset)?|reset)(?:$|[\s_-])/i
+      .test(notes + ' ' + source);
   }
 
   function normalizeResetHistory(items) {

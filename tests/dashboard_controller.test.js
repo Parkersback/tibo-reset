@@ -149,6 +149,9 @@ test('deduplicates and sorts reset records while excluding banked and boost even
     { reset_time: '2026-08-10T00:00:00Z', notes: 'Tibo manual reset', source: 'x' },
     { reset_time: '2026-08-09T00:00:00Z', notes: 'Banked reset added', source: 'x' },
     { reset_time: '2026-08-11T00:00:00Z', notes: 'Usage boost unlocked', source: 'x' },
+    { reset_time: '2026-08-12T00:00:00Z', notes: 'Regular weekly reset', source: 'scheduler' },
+    { reset_time: '2026-08-13T00:00:00Z', notes: 'Regular weekly refresh', source: 'scheduler' },
+    { reset_time: '2026-08-14T00:00:00Z', notes: 'Routine quota maintenance', source: 'weekly_reset' },
     { reset_time: 'invalid', notes: 'Global reset', source: 'x' },
   ];
   const normalized = controller.normalizeResetHistory(records);
@@ -158,6 +161,18 @@ test('deduplicates and sorts reset records while excluding banked and boost even
   ]);
   assert.equal(controller.isGlobalResetRecord({ notes: 'banked reset' }), false);
   assert.equal(controller.isGlobalResetRecord({ notes: 'global hard reset' }), true);
+  assert.equal(
+    controller.isGlobalResetRecord({ notes: 'Routine quota maintenance', source: 'weekly reset' }),
+    false,
+  );
+  assert.equal(
+    controller.isGlobalResetRecord({ notes: 'Regular weekly refresh/reset', source: 'scheduler' }),
+    false,
+  );
+  assert.equal(
+    controller.isGlobalResetRecord({ notes: 'Global Codex quota reset', source: 'weekly_reset' }),
+    true,
+  );
 });
 
 test('share text contains real probabilities, at most two factors, update time, disclaimer and URL', () => {
