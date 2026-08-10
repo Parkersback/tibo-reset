@@ -60,6 +60,26 @@ REQUIRED_I18N_KEYS = {
 }
 
 
+def media_block(css: str, max_width: int) -> str:
+    match = re.search(
+        rf"@media\s*\(max-width:\s*{max_width}px\)\s*\{{", css
+    )
+    if match is None:
+        raise AssertionError(f"missing {max_width}px media block")
+
+    depth = 1
+    cursor = match.end()
+    while cursor < len(css) and depth:
+        if css[cursor] == "{":
+            depth += 1
+        elif css[cursor] == "}":
+            depth -= 1
+        cursor += 1
+    if depth:
+        raise AssertionError(f"unterminated {max_width}px media block")
+    return css[match.end() : cursor - 1]
+
+
 class ShellParser(HTMLParser):
     VOID_ELEMENTS = {
         "area",
@@ -256,6 +276,31 @@ class ObservatoryShellTests(unittest.TestCase):
                 self.css,
                 rf"@media\s*\(max-width:\s*{breakpoint}px\)",
             )
+
+    def test_mobile_header_keeps_brand_and_controls_in_view(self) -> None:
+        mobile_css = media_block(self.css, 760)
+        observation = re.search(
+            r"\.header-observation\s*\{(?P<body>[^}]*)\}", mobile_css
+        )
+        self.assertIsNotNone(
+            observation,
+            "760px breakpoint must explicitly handle .header-observation",
+        )
+        self.assertRegex(observation.group("body"), r"display:\s*none")
+
+        header = re.search(r"\.header-inner\s*\{(?P<body>[^}]*)\}", mobile_css)
+        self.assertIsNotNone(header)
+        self.assertRegex(
+            header.group("body"),
+            r"grid-template-columns:\s*minmax\(0,\s*1fr\)\s+max-content",
+        )
+
+        actions = re.search(
+            r"\.header-actions\s*\{(?P<body>[^}]*)\}", mobile_css
+        )
+        self.assertIsNotNone(actions)
+        self.assertRegex(actions.group("body"), r"justify-self:\s*end")
+        self.assertRegex(actions.group("body"), r"min-width:\s*max-content")
 
     def test_favicon_is_an_original_self_contained_radar_mark(self) -> None:
         root = ET.fromstring(self.favicon)

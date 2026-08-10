@@ -1894,8 +1894,21 @@ main,
   }
 
   .header-inner {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) max-content;
     width: min(calc(100% - 1.25rem), var(--page-width));
+  }
+
+  .header-observation {
+    display: none;
+  }
+
+  .brand {
+    width: auto;
+    min-width: 0;
+  }
+
+  .brand-copy {
+    min-width: 0;
   }
 
   .brand-mark {
@@ -1917,7 +1930,9 @@ main,
   }
 
   .header-actions {
+    min-width: max-content;
     gap: 0.4rem;
+    justify-self: end;
   }
 
   .icon-button,
