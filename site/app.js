@@ -904,9 +904,80 @@
   }
 
   function reconcileNotificationState(previous, probabilities, storage) {
-    var transition = notificationTransition(previous, probabilities);
-    persistNotificationState(storage, transition.state);
-    return transition;
+    var result = deliverNotificationCrossings(previous, probabilities, {
+      permission: 'default',
+      storage: storage
+    });
+    result.triggers = result.delivered.slice();
+    return result;
+  }
+
+  function deliverNotificationCrossings(previous, probabilities, options) {
+    var before = isPlainObject(previous) ? previous : {};
+    var values = isPlainObject(probabilities) ? probabilities : {};
+    var configuration = isPlainObject(options) ? options : {};
+    var next = {
+      enabled: before.enabled === true,
+      fiveHigh: before.fiveHigh === true,
+      dayHigh: before.dayHigh === true
+    };
+    var pending = [];
+    var specifications = [
+      { trigger: '5h', field: 'fiveHigh', value: values.five, threshold: 0.50 },
+      { trigger: '24h', field: 'dayHigh', value: values.day, threshold: 0.60 }
+    ];
+
+    specifications.forEach(function (specification) {
+      var probability = normalizeProbability(specification.value);
+      if (probability === null) {
+        return;
+      }
+      if (probability <= specification.threshold) {
+        next[specification.field] = false;
+      } else if (next.enabled && !next[specification.field]) {
+        pending.push(specification);
+      }
+    });
+
+    var delivered = [];
+    var failed = [];
+    var Constructor = configuration.NotificationConstructor;
+    if (configuration.permission === 'granted' && typeof Constructor === 'function') {
+      pending.forEach(function (specification) {
+        try {
+          new Constructor(translate('notification.title', configuration.language), {
+            body: translate(
+              specification.trigger === '5h' ? 'notification.body5' : 'notification.body24',
+              configuration.language
+            ),
+            tag: 'tibo-reset-' + specification.trigger
+          });
+          next[specification.field] = true;
+          delivered.push(specification.trigger);
+        } catch (error) {
+          failed.push(specification.trigger);
+          if (typeof configuration.onError === 'function') {
+            try {
+              configuration.onError(error, specification.trigger);
+            } catch (feedbackError) {
+              // Feedback failures must not consume or surface the pending crossing.
+            }
+          }
+        }
+      });
+    }
+
+    persistNotificationState(configuration.storage, next);
+    return {
+      state: next,
+      delivered: delivered,
+      failed: failed,
+      pending: pending.map(function (specification) {
+        return specification.trigger;
+      }).filter(function (trigger) {
+        return delivered.indexOf(trigger) === -1;
+      })
+    };
   }
 
   function byId(identifier) {
@@ -1388,30 +1459,24 @@
       return;
     }
     var storage = root && root.localStorage ? root.localStorage : null;
-    var transition = reconcileNotificationState(
+    var NotificationConstructor = root && typeof root.Notification === 'function'
+      ? root.Notification
+      : null;
+    var transition = deliverNotificationCrossings(
       state.notificationState,
       state.model.probabilities,
-      storage
+      {
+        permission: NotificationConstructor ? root.Notification.permission : 'unsupported',
+        NotificationConstructor: NotificationConstructor,
+        storage: storage,
+        language: state.language,
+        onError: function () {
+          setFeedback('feedback.notifyError');
+        }
+      }
     );
     state.notificationState = transition.state;
-    if (
-      !state.notificationState.enabled ||
-      !root ||
-      typeof root.Notification !== 'function' ||
-      root.Notification.permission !== 'granted'
-    ) {
-      return;
-    }
-    transition.triggers.forEach(function (trigger) {
-      try {
-        new root.Notification(translate('notification.title'), {
-          body: translate(trigger === '5h' ? 'notification.body5' : 'notification.body24'),
-          tag: 'tibo-reset-' + trigger
-        });
-      } catch (error) {
-        setFeedback('feedback.notifyError');
-      }
-    });
+    return transition;
   }
 
   function updateRefreshButton(isRefreshing) {
@@ -1444,8 +1509,12 @@
       state.lastLoadAt = Date.now();
       state.model = normalizeViewModel(state.raw, state.lastLoadAt);
       renderAll();
-      processNotificationCrossings();
-      setFeedback(failures.length ? 'feedback.partial' : 'feedback.refreshed');
+      var notificationResult = processNotificationCrossings();
+      setFeedback(
+        notificationResult && notificationResult.failed.length
+          ? 'feedback.notifyError'
+          : (failures.length ? 'feedback.partial' : 'feedback.refreshed')
+      );
       return state.model;
     }).catch(function () {
       state.loadFailures = DATA_SOURCES.slice();
@@ -1489,8 +1558,12 @@
         persistNotificationState(root.localStorage, state.notificationState);
       }
       renderNotificationButton();
-      processNotificationCrossings();
-      setFeedback('feedback.notifyEnabled');
+      var notificationResult = processNotificationCrossings();
+      setFeedback(
+        notificationResult && notificationResult.failed.length
+          ? 'feedback.notifyError'
+          : 'feedback.notifyEnabled'
+      );
     } catch (error) {
       setFeedback('feedback.notifyError');
     }
@@ -1634,6 +1707,7 @@
     buildShareText: buildShareText,
     notificationTransition: notificationTransition,
     reconcileNotificationState: reconcileNotificationState,
+    deliverNotificationCrossings: deliverNotificationCrossings,
     truncateText: truncateText,
     safeHttpsUrl: safeHttpsUrl,
     legacyCopy: legacyCopy,

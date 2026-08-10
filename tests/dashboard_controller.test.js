@@ -209,17 +209,8 @@ test('persists probability falls while notifications are disabled without firing
   const storage = {
     setItem(key, value) { writes.push([key, JSON.parse(value)]); },
   };
-  let result = controller.reconcileNotificationState(
-    { enabled: false, fiveHigh: false, dayHigh: false },
-    { five: 0.8, day: 0.9 },
-    storage,
-  );
-  assert.deepEqual(result.triggers, []);
-  assert.equal(result.state.fiveHigh, true);
-  assert.equal(result.state.dayHigh, true);
-
-  result = controller.reconcileNotificationState(
-    result.state,
+  const result = controller.reconcileNotificationState(
+    { enabled: false, fiveHigh: true, dayHigh: true },
     { five: 0.2, day: 0.3 },
     storage,
   );
@@ -231,13 +222,86 @@ test('persists probability falls while notifications are disabled without firing
     'tibo-reset-notifications',
     { enabled: false, fiveHigh: false, dayHigh: false },
   ]);
+});
 
-  result = controller.reconcileNotificationState(
-    { ...result.state, enabled: true },
-    { five: 0.51, day: 0.61 },
-    storage,
+test('consumes rising notification crossings only after successful delivery', () => {
+  const writes = [];
+  const storage = {
+    setItem(key, value) { writes.push([key, JSON.parse(value)]); },
+  };
+  const created = [];
+  class WorkingNotification {
+    constructor(title, options) {
+      created.push({ title, options });
+    }
+  }
+
+  let result = controller.deliverNotificationCrossings(
+    { enabled: true, fiveHigh: false, dayHigh: false },
+    { five: 0.51, day: 0.2 },
+    {
+      permission: 'default',
+      NotificationConstructor: WorkingNotification,
+      storage,
+      language: 'en',
+    },
   );
-  assert.deepEqual(result.triggers, ['5h', '24h']);
+  assert.deepEqual(result.delivered, []);
+  assert.deepEqual(result.pending, ['5h']);
+  assert.equal(result.state.fiveHigh, false);
+  assert.equal(created.length, 0);
+  assert.equal(writes.at(-1)[1].fiveHigh, false);
+
+  result = controller.deliverNotificationCrossings(
+    result.state,
+    { five: 0.51, day: 0.2 },
+    {
+      permission: 'granted',
+      NotificationConstructor: WorkingNotification,
+      storage,
+      language: 'en',
+    },
+  );
+  assert.deepEqual(result.delivered, ['5h']);
+  assert.deepEqual(result.pending, []);
+  assert.equal(result.state.fiveHigh, true);
+  assert.equal(created.length, 1);
+  assert.equal(writes.at(-1)[1].fiveHigh, true);
+
+  class ThrowingNotification {
+    constructor() {
+      throw new Error('constructor blocked');
+    }
+  }
+  let errorCount = 0;
+  result = controller.deliverNotificationCrossings(
+    { enabled: true, fiveHigh: false, dayHigh: false },
+    { five: 0.2, day: 0.61 },
+    {
+      permission: 'granted',
+      NotificationConstructor: ThrowingNotification,
+      storage,
+      onError() { errorCount += 1; },
+    },
+  );
+  assert.deepEqual(result.delivered, []);
+  assert.deepEqual(result.failed, ['24h']);
+  assert.deepEqual(result.pending, ['24h']);
+  assert.equal(result.state.dayHigh, false);
+  assert.equal(writes.at(-1)[1].dayHigh, false);
+  assert.equal(errorCount, 1);
+
+  result = controller.deliverNotificationCrossings(
+    result.state,
+    { five: 0.2, day: 0.61 },
+    {
+      permission: 'granted',
+      NotificationConstructor: WorkingNotification,
+      storage,
+    },
+  );
+  assert.deepEqual(result.delivered, ['24h']);
+  assert.equal(result.state.dayHigh, true);
 });
 
 test('both translation dictionaries cover every HTML key', () => {
