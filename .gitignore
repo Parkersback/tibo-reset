@@ -1,0 +1,7 @@
+.worktrees/
+.runtime/
+__pycache__/
+*.py[cod]
+site/data/*.tmp
+site/data/.*.tmp
+Thumbs.db
