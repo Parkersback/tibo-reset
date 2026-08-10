@@ -48,32 +48,83 @@ test('action thresholds include the documented boundaries', () => {
   assert.equal(controller.getActionLevel(null), 'unknown');
 });
 
-test('classifies signals by author or source and selects the newest real item', () => {
-  assert.equal(controller.classifySignal({ author: 'Tibo' }), 'tibo');
-  assert.equal(controller.classifySignal({ source: 'thsottiaux_rss' }), 'tibo');
-  assert.equal(controller.classifySignal({ author: 'OpenAI Devs' }), 'openai');
-  assert.equal(controller.classifySignal({ source: 'release_status' }), 'openai');
-  assert.equal(controller.classifySignal({ author: 'A community user' }), 'community');
-  assert.equal(
-    controller.classifySignal({ source: 'community_rss', author: '/u/OpenAI' }),
-    'community',
-  );
+test('trusts signals only when source, author, host and time satisfy the category policy', () => {
+  const now = Date.parse('2026-08-11T00:00:00Z');
+  const validTibo = {
+    timestamp: '2026-08-10T20:00:00Z',
+    source: 'tibo_rss',
+    author: 'Tibo',
+    text: 'verified Tibo signal',
+    url: 'https://x.com/thsottiaux/status/1',
+  };
+  const validCommunity = {
+    timestamp: '2026-08-10T21:00:00Z',
+    source: 'community_rss',
+    author: '/u/example',
+    text: 'verified community signal',
+    url: 'https://www.reddit.com/r/OpenAI/comments/1/example/',
+  };
+  const validOpenAI = {
+    timestamp: '2026-08-10T22:00:00Z',
+    source: 'openai_status',
+    author: 'OpenAI',
+    text: 'verified official signal',
+    url: 'https://status.openai.com/incidents/example',
+  };
+  const phishingOpenAI = {
+    timestamp: '2026-08-10T23:00:00Z',
+    source: 'status',
+    author: 'OpenAI',
+    text: 'phishing signal',
+    url: 'https://evil.example/openai',
+  };
+
+  assert.equal(controller.classifySignal(validTibo), 'tibo');
+  assert.equal(controller.classifySignal(validCommunity), 'community');
+  assert.equal(controller.classifySignal(validOpenAI), 'openai');
+  assert.equal(controller.classifySignal(phishingOpenAI), null);
+  assert.equal(controller.classifySignal({
+    ...validCommunity,
+    source: 'unknown_rss',
+  }), null);
+  assert.equal(controller.classifySignal({
+    ...validCommunity,
+    url: 'https://reddit.com.evil.example/r/OpenAI',
+  }), null);
 
   const selected = controller.selectLatestSignals([
-    { timestamp: '2026-08-10T01:00:00Z', author: 'Tibo', text: 'older' },
-    { timestamp: '2026-08-10T03:00:00Z', source: 'thsottiaux', text: 'newer' },
-    { timestamp: '2026-08-10T02:00:00Z', source: 'openai_status', text: 'official' },
-    { timestamp: '2026-08-10T04:00:00Z', author: 'Elsewhere', text: 'community' },
-    { timestamp: 'not-a-date', author: 'OpenAI', text: 'invalid date' },
-  ]);
-  assert.equal(selected.tibo.text, 'newer');
-  assert.equal(selected.openai.text, 'official');
-  assert.equal(selected.community.text, 'community');
+    validTibo,
+    validCommunity,
+    validOpenAI,
+    phishingOpenAI,
+    {
+      ...validTibo,
+      timestamp: '2026-08-12T01:00:01Z',
+      text: 'more than 24 hours in the future',
+    },
+    { ...validOpenAI, timestamp: 'not-a-date', text: 'invalid time' },
+  ], now);
+  assert.equal(selected.tibo.text, 'verified Tibo signal');
+  assert.equal(selected.openai.text, 'verified official signal');
+  assert.equal(selected.community.text, 'verified community signal');
+
+  assert.equal(
+    controller.trustedSignalUrl(validOpenAI, 'openai'),
+    'https://status.openai.com/incidents/example',
+  );
+  assert.equal(controller.trustedSignalUrl(phishingOpenAI, 'openai'), null);
+  assert.equal(controller.trustedSignalUrl(validOpenAI, 'community'), null);
 
   const mirroredTweets = JSON.parse(
     fs.readFileSync(path.join(ROOT, 'site', 'data', 'tweets.json'), 'utf8'),
   );
-  assert.equal(controller.selectLatestSignals(mirroredTweets).openai, null);
+  const mirrored = controller.selectLatestSignals(mirroredTweets, Date.now());
+  assert.ok(mirrored.tibo);
+  assert.ok(mirrored.community);
+  assert.equal(mirrored.openai, null);
+
+  const source = fs.readFileSync(path.join(ROOT, 'site', 'app.js'), 'utf8');
+  assert.match(source, /trustedSignalUrl\(item, category\)/);
 });
 
 test('normalizes degraded sync source and error details for a safe status mount', () => {

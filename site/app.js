@@ -45,6 +45,32 @@
     'syncStatus'
   ]);
 
+  var SIGNAL_POLICIES = Object.freeze({
+    tibo: Object.freeze({
+      sources: Object.freeze(['tibo_rss']),
+      authors: Object.freeze(['tibo', 'thsottiaux']),
+      hosts: Object.freeze(['x.com', 'twitter.com'])
+    }),
+    community: Object.freeze({
+      sources: Object.freeze(['community_rss']),
+      authors: null,
+      hosts: Object.freeze(['reddit.com'])
+    }),
+    openai: Object.freeze({
+      sources: Object.freeze(['openai_rss', 'openai_status', 'status_rss', 'release_rss']),
+      authors: Object.freeze([
+        'openai',
+        '@openai',
+        'openai devs',
+        'openaidevs',
+        '@openaidevs',
+        'openai developers',
+        'openai status'
+      ]),
+      hosts: Object.freeze(['x.com', 'twitter.com', 'openai.com'])
+    })
+  });
+
   var I18N = Object.freeze({
     'zh-CN': Object.freeze({
       'meta.title': 'Tibo Reset · 深夜重置气象台',
@@ -460,48 +486,40 @@
     var signal = isPlainObject(item) ? item : {};
     var author = safeString(signal.author).toLowerCase();
     var source = safeString(signal.source).toLowerCase();
-    var identity = author + ' ' + source;
-    if (source.indexOf('community') !== -1 || source.indexOf('reddit') !== -1) {
-      return 'community';
+    var categories = ['tibo', 'community', 'openai'];
+    for (var index = 0; index < categories.length; index += 1) {
+      var category = categories[index];
+      var policy = SIGNAL_POLICIES[category];
+      if (policy.sources.indexOf(source) === -1) {
+        continue;
+      }
+      if (policy.authors && policy.authors.indexOf(author) === -1) {
+        return null;
+      }
+      return trustedUrlForHosts(signal.url, policy.hosts) ? category : null;
     }
-    if (identity.indexOf('tibo') !== -1 || identity.indexOf('thsottiaux') !== -1) {
-      return 'tibo';
-    }
-    var officialAuthors = [
-      'openai',
-      '@openai',
-      'openai devs',
-      'openaidevs',
-      '@openaidevs',
-      'openai developers',
-      'openai status'
-    ];
-    if (
-      officialAuthors.indexOf(author) !== -1 ||
-      source.indexOf('openai') !== -1 ||
-      source.indexOf('status') !== -1 ||
-      source.indexOf('release') !== -1 ||
-      source.indexOf('dev') !== -1
-    ) {
-      return 'openai';
-    }
-    return 'community';
+    return null;
   }
 
-  function selectLatestSignals(items) {
+  function selectLatestSignals(items, nowValue) {
     var selected = { tibo: null, openai: null, community: null };
     if (!Array.isArray(items)) {
       return selected;
     }
+    var now = Number.isFinite(nowValue) ? nowValue : Date.now();
+    var maximumFutureTime = now + 24 * 60 * 60 * 1000;
     items.forEach(function (item) {
       if (!isPlainObject(item) || !safeString(item.text)) {
         return;
       }
       var timestamp = toTimestamp(item.timestamp);
-      if (timestamp === null) {
+      if (timestamp === null || timestamp > maximumFutureTime) {
         return;
       }
       var category = classifySignal(item);
+      if (!category) {
+        return;
+      }
       var current = selected[category];
       if (!current || timestamp > toTimestamp(current.timestamp)) {
         selected[category] = item;
@@ -785,7 +803,7 @@
       confidence: safeString(prediction.confidence),
       expectedTime: toTimestamp(nextReset.expected_time),
       factors: normalizeFactors(prediction),
-      signals: selectLatestSignals(source.tweets),
+      signals: selectLatestSignals(source.tweets, now),
       history: prepareHistory(source.predictionHistory, now),
       performance: normalizePerformance(source.performance),
       resets: normalizeResetHistory(source.resetHistory),
@@ -1257,6 +1275,33 @@
     }
   }
 
+  function hostMatchesPolicy(hostname, allowedRoot) {
+    return hostname === allowedRoot || hostname.endsWith('.' + allowedRoot);
+  }
+
+  function trustedUrlForHosts(value, allowedHosts) {
+    var url = safeHttpsUrl(value);
+    if (!url || !Array.isArray(allowedHosts)) {
+      return null;
+    }
+    try {
+      var hostname = new URL(url).hostname.toLowerCase().replace(/\.$/, '');
+      return allowedHosts.some(function (allowedRoot) {
+        return hostMatchesPolicy(hostname, allowedRoot);
+      }) ? url : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function trustedSignalUrl(item, expectedCategory) {
+    var category = classifySignal(item);
+    if (!category || category !== expectedCategory) {
+      return null;
+    }
+    return trustedUrlForHosts(item.url, SIGNAL_POLICIES[category].hosts);
+  }
+
   function signalLabel(category) {
     if (category === 'community') {
       return translate('signals.community');
@@ -1298,7 +1343,7 @@
       item ? truncateText(safeString(item.text), 320) : translate(fallbackKeys[category])
     ));
 
-    var url = item ? safeHttpsUrl(item.url) : null;
+    var url = item ? trustedSignalUrl(item, category) : null;
     if (url) {
       var link = createElement('a', 'signal-strength', translate('signals.openSource'));
       link.href = url;
@@ -1718,6 +1763,7 @@
     deliverNotificationCrossings: deliverNotificationCrossings,
     truncateText: truncateText,
     safeHttpsUrl: safeHttpsUrl,
+    trustedSignalUrl: trustedSignalUrl,
     legacyCopy: legacyCopy,
     copyText: copyText,
     isStale: isStale,
