@@ -21,6 +21,7 @@ class Source:
     url: str
     required_keys: tuple[str, ...] = ()
     expected_type: type[dict] | type[list] = dict
+    item_required_keys: tuple[str, ...] = ()
 
 
 DEFAULT_SOURCES = (
@@ -33,11 +34,13 @@ DEFAULT_SOURCES = (
         "prediction_history.json",
         "https://willtiboreset.xyz/data/prediction_history.json",
         expected_type=list,
+        item_required_keys=("prediction_time", "prediction"),
     ),
     Source(
         "tweets.json",
         "https://willtiboreset.xyz/data/tweets.json",
         expected_type=list,
+        item_required_keys=("timestamp", "text"),
     ),
     Source(
         "model_performance.json",
@@ -48,6 +51,7 @@ DEFAULT_SOURCES = (
         "reset_history.json",
         "https://raw.githubusercontent.com/EvanProgramming/willtiboreset/main/data/reset_history.json",
         expected_type=list,
+        item_required_keys=("reset_time", "source"),
     ),
 )
 
@@ -87,6 +91,22 @@ def validate_payload(source: Source, payload: Any) -> None:
                 + ", ".join(missing_horizons)
             )
 
+    if source.expected_type is list:
+        for index, item in enumerate(payload):
+            if type(item) is not dict:
+                raise ValueError(
+                    f"{source.name}: item {index} expected dict, "
+                    f"got {type(item).__name__}"
+                )
+            missing_item_keys = [
+                key for key in source.item_required_keys if key not in item
+            ]
+            if missing_item_keys:
+                raise ValueError(
+                    f"{source.name}: item {index} missing required keys: "
+                    + ", ".join(missing_item_keys)
+                )
+
 
 def atomic_write_json(path: Path, payload: Any) -> None:
     path = Path(path)
@@ -114,11 +134,12 @@ def atomic_write_json(path: Path, payload: Any) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
-def _cache_is_valid_json(path: Path) -> bool:
+def _cache_is_valid(path: Path, source: Source) -> bool:
     try:
         with path.open("r", encoding="utf-8") as cache_file:
-            json.load(cache_file)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            payload = json.load(cache_file)
+        validate_payload(source, payload)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
         return False
     return True
 
@@ -146,10 +167,15 @@ def sync_all(
             validate_payload(source, payload)
             atomic_write_json(target, payload)
             source_statuses.append(
-                {"name": source.name, "url": source.url, "status": "fresh"}
+                {
+                    "name": source.name,
+                    "url": source.url,
+                    "status": "fresh",
+                    "error": None,
+                }
             )
         except Exception as error:
-            status = "cached" if _cache_is_valid_json(target) else "failed"
+            status = "cached" if _cache_is_valid(target, source) else "failed"
             source_statuses.append(
                 {
                     "name": source.name,

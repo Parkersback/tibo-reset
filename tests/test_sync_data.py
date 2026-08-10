@@ -30,7 +30,12 @@ def valid_payload_for(source: sync_data.Source):
     if source.name == "model_performance.json":
         return {"total_predictions": 12, "horizons": {}}
     if source.expected_type is list:
-        return [{"source": source.name}]
+        return [
+            {
+                key: f"value-for-{key}"
+                for key in source.item_required_keys
+            }
+        ]
     return {key: f"value-for-{key}" for key in source.required_keys}
 
 
@@ -118,6 +123,42 @@ class ValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, missing_key):
                     sync_data.validate_payload(source, payload)
 
+    def test_default_list_sources_define_stable_item_contracts(self) -> None:
+        expected_contracts = {
+            "prediction_history.json": ("prediction_time", "prediction"),
+            "tweets.json": ("timestamp", "text"),
+            "reset_history.json": ("reset_time", "source"),
+        }
+
+        actual_contracts = {
+            source.name: source.item_required_keys
+            for source in sync_data.DEFAULT_SOURCES
+            if source.expected_type is list
+        }
+
+        self.assertEqual(expected_contracts, actual_contracts)
+
+    def test_validate_payload_rejects_non_object_list_item(self) -> None:
+        source = next(
+            source
+            for source in sync_data.DEFAULT_SOURCES
+            if source.name == "tweets.json"
+        )
+
+        with self.assertRaisesRegex(ValueError, "item 0.*dict"):
+            sync_data.validate_payload(source, ["not-an-object"])
+
+    def test_validate_payload_rejects_missing_list_item_key(self) -> None:
+        for source in sync_data.DEFAULT_SOURCES:
+            if source.expected_type is not list:
+                continue
+            payload = valid_payload_for(source)
+            missing_key = source.item_required_keys[0]
+            del payload[0][missing_key]
+            with self.subTest(source=source.name, missing_key=missing_key):
+                with self.assertRaisesRegex(ValueError, missing_key):
+                    sync_data.validate_payload(source, payload)
+
 
 class AtomicWriteTests(unittest.TestCase):
     def test_atomic_write_json_leaves_no_temporary_file(self) -> None:
@@ -146,6 +187,7 @@ class SyncAllTests(unittest.TestCase):
                 "tweets.json",
                 "https://example.test/tweets.json",
                 expected_type=list,
+                item_required_keys=("id",),
             ),
         )
 
@@ -201,7 +243,7 @@ class SyncAllTests(unittest.TestCase):
         self.assertIn("offline", status["sources"][0]["error"])
         self.assertFalse((self.output_dir / self.sources[0].name).exists())
 
-    def test_fetch_failure_keeps_parseable_legacy_json_cache(self) -> None:
+    def test_fetch_failure_rejects_parseable_but_invalid_cache(self) -> None:
         source = self.sources[0]
         self.output_dir.mkdir(parents=True)
         target = self.output_dir / source.name
@@ -211,11 +253,11 @@ class SyncAllTests(unittest.TestCase):
         with patch.object(sync_data, "fetch_json", side_effect=OSError("offline")):
             succeeded = sync_data.sync_all(self.output_dir, (source,))
 
-        self.assertTrue(succeeded)
+        self.assertFalse(succeeded)
         self.assertEqual(old_text, target.read_text(encoding="utf-8"))
         status = json.loads((self.output_dir / "sync-status.json").read_text(encoding="utf-8"))
-        self.assertEqual("degraded", status["overall_status"])
-        self.assertEqual("cached", status["sources"][0]["status"])
+        self.assertEqual("failed", status["overall_status"])
+        self.assertEqual("failed", status["sources"][0]["status"])
 
     def test_sync_status_has_schema_timestamp_urls_and_conditional_errors(self) -> None:
         with patch.object(
@@ -237,7 +279,12 @@ class SyncAllTests(unittest.TestCase):
         )
         for source, entry in zip(self.sources, status["sources"], strict=True):
             self.assertEqual(
-                {"name": source.name, "url": source.url, "status": "fresh"},
+                {
+                    "name": source.name,
+                    "url": source.url,
+                    "status": "fresh",
+                    "error": None,
+                },
                 entry,
             )
 
@@ -258,6 +305,10 @@ class CommandLineTests(unittest.TestCase):
             self.assertIn("fresh=5", output.getvalue())
 
         with tempfile.TemporaryDirectory() as failed_dir:
+            for source in sync_data.DEFAULT_SOURCES:
+                (Path(failed_dir) / source.name).write_text(
+                    '{"legacy_schema":true}\n', encoding="utf-8"
+                )
             with patch.object(sync_data, "fetch_json", side_effect=OSError("offline")):
                 output = StringIO()
                 with redirect_stdout(output):

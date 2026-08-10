@@ -1,32 +1,37 @@
 {
   "schema": 1,
-  "synced_at": "2026-08-10T17:39:35Z",
+  "synced_at": "2026-08-10T17:49:26Z",
   "overall_status": "ok",
   "sources": [
     {
       "name": "prediction.json",
       "url": "https://willtiboreset.xyz/data/prediction.json",
-      "status": "fresh"
+      "status": "fresh",
+      "error": null
     },
     {
       "name": "prediction_history.json",
       "url": "https://willtiboreset.xyz/data/prediction_history.json",
-      "status": "fresh"
+      "status": "fresh",
+      "error": null
     },
     {
       "name": "tweets.json",
       "url": "https://willtiboreset.xyz/data/tweets.json",
-      "status": "fresh"
+      "status": "fresh",
+      "error": null
     },
     {
       "name": "model_performance.json",
       "url": "https://willtiboreset.xyz/data/model_performance.json",
-      "status": "fresh"
+      "status": "fresh",
+      "error": null
     },
     {
       "name": "reset_history.json",
       "url": "https://raw.githubusercontent.com/EvanProgramming/willtiboreset/main/data/reset_history.json",
-      "status": "fresh"
+      "status": "fresh",
+      "error": null
     }
   ]
 }
