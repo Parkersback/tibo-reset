@@ -363,6 +363,21 @@ h3 {
   background: var(--color-coral);
 }
 
+.sync-status-details {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-left: 1rem;
+  color: var(--color-coral);
+  font-family: var(--font-data);
+  font-size: 0.61rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.sync-status-details[hidden] {
+  display: none;
+}
+
 .updated-time {
   grid-column: 1 / -1;
   margin: 0;

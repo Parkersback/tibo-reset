@@ -54,6 +54,10 @@ test('classifies signals by author or source and selects the newest real item', 
   assert.equal(controller.classifySignal({ author: 'OpenAI Devs' }), 'openai');
   assert.equal(controller.classifySignal({ source: 'release_status' }), 'openai');
   assert.equal(controller.classifySignal({ author: 'A community user' }), 'community');
+  assert.equal(
+    controller.classifySignal({ source: 'community_rss', author: '/u/OpenAI' }),
+    'community',
+  );
 
   const selected = controller.selectLatestSignals([
     { timestamp: '2026-08-10T01:00:00Z', author: 'Tibo', text: 'older' },
@@ -65,6 +69,37 @@ test('classifies signals by author or source and selects the newest real item', 
   assert.equal(selected.tibo.text, 'newer');
   assert.equal(selected.openai.text, 'official');
   assert.equal(selected.community.text, 'community');
+
+  const mirroredTweets = JSON.parse(
+    fs.readFileSync(path.join(ROOT, 'site', 'data', 'tweets.json'), 'utf8'),
+  );
+  assert.equal(controller.selectLatestSignals(mirroredTweets).openai, null);
+});
+
+test('normalizes degraded sync source and error details for a safe status mount', () => {
+  const issues = controller.normalizeSyncIssues({
+    overall_status: 'degraded',
+    sources: [
+      {
+        name: 'tweets.json',
+        status: 'cached',
+        error: '<img src=x onerror=alert(1)> upstream timeout',
+      },
+      { name: 'prediction.json', status: 'fresh', error: null },
+      { name: 'reset_history.json', status: 'failed', error: 'HTTP 503' },
+    ],
+  });
+  assert.deepEqual(issues, [
+    {
+      name: 'tweets.json',
+      status: 'cached',
+      error: '<img src=x onerror=alert(1)> upstream timeout',
+    },
+    { name: 'reset_history.json', status: 'failed', error: 'HTTP 503' },
+  ]);
+
+  const html = fs.readFileSync(path.join(ROOT, 'site', 'index.html'), 'utf8');
+  assert.match(html, /id="sync-status-details"/);
 });
 
 test('filters history to 24 hours, falls back to the newest available window and samples to 160', () => {
@@ -169,6 +204,42 @@ test('notification state triggers only on crossings and rearms after a fall', ()
   assert.equal(invalid.state.dayHigh, true);
 });
 
+test('persists probability falls while notifications are disabled without firing', () => {
+  const writes = [];
+  const storage = {
+    setItem(key, value) { writes.push([key, JSON.parse(value)]); },
+  };
+  let result = controller.reconcileNotificationState(
+    { enabled: false, fiveHigh: false, dayHigh: false },
+    { five: 0.8, day: 0.9 },
+    storage,
+  );
+  assert.deepEqual(result.triggers, []);
+  assert.equal(result.state.fiveHigh, true);
+  assert.equal(result.state.dayHigh, true);
+
+  result = controller.reconcileNotificationState(
+    result.state,
+    { five: 0.2, day: 0.3 },
+    storage,
+  );
+  assert.deepEqual(result.triggers, []);
+  assert.equal(result.state.enabled, false);
+  assert.equal(result.state.fiveHigh, false);
+  assert.equal(result.state.dayHigh, false);
+  assert.deepEqual(writes.at(-1), [
+    'tibo-reset-notifications',
+    { enabled: false, fiveHigh: false, dayHigh: false },
+  ]);
+
+  result = controller.reconcileNotificationState(
+    { ...result.state, enabled: true },
+    { five: 0.51, day: 0.61 },
+    storage,
+  );
+  assert.deepEqual(result.triggers, ['5h', '24h']);
+});
+
 test('both translation dictionaries cover every HTML key', () => {
   const html = fs.readFileSync(path.join(ROOT, 'site', 'index.html'), 'utf8');
   const keys = [...html.matchAll(/data-i18n(?:-aria-label|-content)?="([^"]+)"/g)]
@@ -202,4 +273,3 @@ test('controller uses all six local sources, allSettled and text-only DOM writes
   const malicious = '<img src=x onerror=alert(1)> & <script>alert(2)</script>';
   assert.equal(controller.truncateText(malicious, 500), malicious);
 });
-

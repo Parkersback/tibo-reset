@@ -53,6 +53,7 @@
       'brand.homeLabel': 'Tibo Reset 首页',
       'brand.tagline': '深夜重置气象台',
       'status.groupLabel': '数据观测状态',
+      'status.detailsLabel': '同步来源错误详情',
       'status.unofficial': '非官方观测',
       'status.loading': '正在读取镜像数据',
       'status.ok': '镜像数据在线',
@@ -192,6 +193,7 @@
       'brand.homeLabel': 'Tibo Reset home',
       'brand.tagline': 'Midnight reset observatory',
       'status.groupLabel': 'Data observation status',
+      'status.detailsLabel': 'Sync source error details',
       'status.unofficial': 'Unofficial observation',
       'status.loading': 'Reading mirrored data',
       'status.ok': 'Mirror data online',
@@ -456,15 +458,30 @@
 
   function classifySignal(item) {
     var signal = isPlainObject(item) ? item : {};
-    var identity = (safeString(signal.author) + ' ' + safeString(signal.source)).toLowerCase();
+    var author = safeString(signal.author).toLowerCase();
+    var source = safeString(signal.source).toLowerCase();
+    var identity = author + ' ' + source;
+    if (source.indexOf('community') !== -1 || source.indexOf('reddit') !== -1) {
+      return 'community';
+    }
     if (identity.indexOf('tibo') !== -1 || identity.indexOf('thsottiaux') !== -1) {
       return 'tibo';
     }
+    var officialAuthors = [
+      'openai',
+      '@openai',
+      'openai devs',
+      'openaidevs',
+      '@openaidevs',
+      'openai developers',
+      'openai status'
+    ];
     if (
-      identity.indexOf('openai') !== -1 ||
-      identity.indexOf('status') !== -1 ||
-      identity.indexOf('release') !== -1 ||
-      identity.indexOf('dev') !== -1
+      officialAuthors.indexOf(author) !== -1 ||
+      source.indexOf('openai') !== -1 ||
+      source.indexOf('status') !== -1 ||
+      source.indexOf('release') !== -1 ||
+      source.indexOf('dev') !== -1
     ) {
       return 'openai';
     }
@@ -720,8 +737,26 @@
     return {
       overall: status,
       syncedAt: toTimestamp(source.synced_at),
-      sources: sources
+      sources: sources,
+      issues: normalizeSyncIssues(source)
     };
+  }
+
+  function normalizeSyncIssues(value) {
+    var source = isPlainObject(value) ? value : {};
+    var sources = Array.isArray(source.sources) ? source.sources : [];
+    return sources.reduce(function (issues, item) {
+      if (!isPlainObject(item)) {
+        return issues;
+      }
+      var name = safeString(item.name);
+      var status = safeString(item.status).toLowerCase();
+      var error = safeString(item.error);
+      if (name && (error || status === 'cached' || status === 'failed')) {
+        issues.push({ name: name, status: status, error: error });
+      }
+      return issues;
+    }, []);
   }
 
   function normalizeViewModel(raw, nowValue) {
@@ -868,6 +903,12 @@
     }
   }
 
+  function reconcileNotificationState(previous, probabilities, storage) {
+    var transition = notificationTransition(previous, probabilities);
+    persistNotificationState(storage, transition.state);
+    return transition;
+  }
+
   function byId(identifier) {
     return typeof document === 'undefined' ? null : document.getElementById(identifier);
   }
@@ -975,6 +1016,19 @@
     pulse.setAttribute('aria-hidden', 'true');
     element.appendChild(pulse);
     element.appendChild(createElement('span', '', translate(presentation.key, state.language, presentation.values)));
+
+    var details = byId('sync-status-details');
+    if (details) {
+      clearElement(details);
+      var issues = state.model.sync && Array.isArray(state.model.sync.issues)
+        ? state.model.sync.issues
+        : [];
+      issues.forEach(function (issue) {
+        var detail = issue.error || issue.status;
+        details.appendChild(createElement('li', '', issue.name + ': ' + detail));
+      });
+      details.hidden = issues.length === 0;
+    }
 
     var updated = byId('last-updated');
     if (updated) {
@@ -1330,19 +1384,23 @@
   }
 
   function processNotificationCrossings() {
+    if (!state.model) {
+      return;
+    }
+    var storage = root && root.localStorage ? root.localStorage : null;
+    var transition = reconcileNotificationState(
+      state.notificationState,
+      state.model.probabilities,
+      storage
+    );
+    state.notificationState = transition.state;
     if (
-      !state.model ||
       !state.notificationState.enabled ||
       !root ||
       typeof root.Notification !== 'function' ||
       root.Notification.permission !== 'granted'
     ) {
       return;
-    }
-    var transition = notificationTransition(state.notificationState, state.model.probabilities);
-    state.notificationState = transition.state;
-    if (root.localStorage) {
-      persistNotificationState(root.localStorage, state.notificationState);
     }
     transition.triggers.forEach(function (trigger) {
       try {
@@ -1570,10 +1628,12 @@
     buildHistoryGeometry: buildHistoryGeometry,
     isGlobalResetRecord: isGlobalResetRecord,
     normalizeResetHistory: normalizeResetHistory,
+    normalizeSyncIssues: normalizeSyncIssues,
     normalizeFactors: normalizeFactors,
     normalizeViewModel: normalizeViewModel,
     buildShareText: buildShareText,
     notificationTransition: notificationTransition,
+    reconcileNotificationState: reconcileNotificationState,
     truncateText: truncateText,
     safeHttpsUrl: safeHttpsUrl,
     legacyCopy: legacyCopy,
