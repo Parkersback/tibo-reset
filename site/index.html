@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="Tibo Reset 是一个非官方的 ChatGPT 与 Codex 额度重置概率观测站。"
+      data-i18n-content="meta.description"
+    >
+    <meta name="theme-color" content="#080b22">
+    <title data-i18n="meta.title">Tibo Reset · 深夜重置气象台</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content" data-i18n="skip.toContent">跳到主要内容</a>
+
+    <div class="night-sky" aria-hidden="true">
+      <span class="sky-glow sky-glow--coral"></span>
+      <span class="sky-glow sky-glow--ice"></span>
+      <span class="weather-front weather-front--one"></span>
+      <span class="weather-front weather-front--two"></span>
+    </div>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a
+          class="brand"
+          href="#forecast"
+          aria-label="Tibo Reset 首页"
+          data-i18n-aria-label="brand.homeLabel"
+        >
+          <span class="brand-mark" aria-hidden="true">
+            <span class="brand-mark__sweep"></span>
+            <span class="brand-mark__letter">T</span>
+          </span>
+          <span class="brand-copy">
+            <strong id="brand-name">Tibo Reset</strong>
+            <span data-i18n="brand.tagline">深夜重置气象台</span>
+          </span>
+        </a>
+
+        <div
+          class="header-observation"
+          aria-label="数据观测状态"
+          data-i18n-aria-label="status.groupLabel"
+        >
+          <span class="unofficial-chip" data-i18n="status.unofficial">非官方观测</span>
+          <div id="data-status" class="data-status" role="status" aria-live="polite" aria-atomic="true">
+            <span class="status-pulse" aria-hidden="true"></span>
+            <span data-i18n="status.loading">正在读取镜像数据</span>
+          </div>
+          <p class="updated-time">
+            <span data-i18n="header.updated">最近更新</span>
+            <time id="last-updated" datetime="" data-i18n="common.waiting">等待数据</time>
+          </p>
+        </div>
+
+        <nav
+          class="primary-nav"
+          aria-label="页内导航"
+          data-i18n-aria-label="nav.label"
+        >
+          <a href="#forecast" data-i18n="nav.forecast">预报</a>
+          <a href="#signals" data-i18n="nav.signals">信号</a>
+          <a href="#history" data-i18n="nav.history">轨迹</a>
+          <a href="#methodology" data-i18n="nav.methodology">方法</a>
+        </nav>
+
+        <div class="header-actions">
+          <button
+            id="refresh-button"
+            class="icon-button"
+            type="button"
+            aria-label="刷新本地镜像数据"
+            data-i18n-aria-label="actions.refreshLabel"
+          >
+            <span class="refresh-symbol" aria-hidden="true"></span>
+            <span class="button-label" data-i18n="actions.refresh">刷新</span>
+          </button>
+          <button
+            id="language-toggle"
+            class="language-button"
+            type="button"
+            aria-label="切换为英文"
+            aria-pressed="false"
+            data-i18n-aria-label="actions.languageLabel"
+          >
+            <span class="language-button__active" lang="zh-CN">中</span>
+            <span aria-hidden="true">/</span>
+            <span lang="en" data-i18n="actions.language">EN</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section id="forecast" class="page-section forecast-section" aria-labelledby="forecast-title">
+        <div class="section-intro section-intro--hero">
+          <p class="eyebrow" data-i18n="forecast.eyebrow">RESET WEATHER / 001</p>
+          <h1 id="forecast-title" data-i18n="forecast.title">今夜，额度会重置吗？</h1>
+          <p class="section-lede" data-i18n="forecast.subtitle">
+            综合公开信号与历史间隔，观测额外全局 hard reset 的可能性。
+          </p>
+        </div>
+
+        <div class="station-grid forecast-layout">
+          <article class="glass-panel primary-forecast" aria-labelledby="primary-gauge-label">
+            <div class="panel-coordinate" aria-hidden="true">
+              <span>OBS-24</span>
+              <span>00:00 UTC</span>
+            </div>
+
+            <div class="radar-stage">
+              <div class="radar-orbit radar-orbit--outer" aria-hidden="true"></div>
+              <div class="radar-orbit radar-orbit--middle" aria-hidden="true"></div>
+              <div class="radar-axis" aria-hidden="true"></div>
+              <div
+                id="forecast-24h"
+                class="probability-gauge probability-gauge--primary is-loading"
+                data-horizon="24h"
+                style="--gauge-value: 18; --gauge-color: var(--color-coral);"
+              >
+                <span class="gauge-scan" aria-hidden="true"></span>
+                <span class="gauge-center">
+                  <span id="probability-24h" class="probability-value">--%</span>
+                  <span id="primary-gauge-label" class="probability-label" data-i18n="forecast.horizon24">
+                    24 小时概率
+                  </span>
+                  <span class="confidence-readout">
+                    <span data-i18n="forecast.confidence">信心</span>
+                    <strong id="confidence-value" data-i18n="forecast.confidencePending">待校准</strong>
+                  </span>
+                </span>
+              </div>
+            </div>
+
+            <div
+              class="auxiliary-readings"
+              aria-label="其他时间窗口"
+              data-i18n-aria-label="forecast.otherHorizonsLabel"
+            >
+              <div
+                id="forecast-5h"
+                class="reading-card is-loading"
+                data-horizon="5h"
+                style="--reading-value: 12;"
+              >
+                <div class="reading-card__dial" aria-hidden="true"></div>
+                <div>
+                  <span id="probability-5h" class="reading-value">--%</span>
+                  <span class="reading-label" data-i18n="forecast.horizon5">5 小时</span>
+                </div>
+              </div>
+              <div
+                id="forecast-48h"
+                class="reading-card is-loading"
+                data-horizon="48h"
+                style="--reading-value: 28;"
+              >
+                <div class="reading-card__dial" aria-hidden="true"></div>
+                <div>
+                  <span id="probability-48h" class="reading-value">--%</span>
+                  <span class="reading-label" data-i18n="forecast.horizon48">48 小时</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <aside class="glass-panel action-station" aria-labelledby="action-station-title">
+            <div class="panel-heading panel-heading--compact">
+              <div>
+                <p class="eyebrow" data-i18n="forecast.actionLabel">ACTION WINDOW</p>
+                <h2 id="action-station-title" data-i18n="forecast.actionTitle">今夜的行动建议</h2>
+              </div>
+              <span class="weather-indicator" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </span>
+            </div>
+
+            <p id="action-recommendation" class="action-copy" data-i18n="forecast.actionFallback">
+              正在读取本地镜像，稍后给出行动建议。
+            </p>
+
+            <div class="reset-window">
+              <div class="reset-window__time">
+                <span class="micro-label" data-i18n="forecast.resetLabel">下次预计重置</span>
+                <time id="next-reset-time" datetime="" data-i18n="common.pending">待载入</time>
+              </div>
+              <div class="reset-window__countdown">
+                <span class="micro-label" data-i18n="forecast.countdownLabel">距离预计时间</span>
+                <output id="countdown" role="status" aria-live="polite" aria-atomic="true">--天 --:--:--</output>
+              </div>
+            </div>
+
+            <div class="forecast-actions">
+              <button
+                id="notification-button"
+                class="action-button action-button--primary"
+                type="button"
+                aria-label="开启高概率浏览器提醒"
+                data-i18n-aria-label="actions.notifyLabel"
+              >
+                <span class="button-weather-icon button-weather-icon--bell" aria-hidden="true"></span>
+                <span data-i18n="actions.notify">开启提醒</span>
+              </button>
+              <button
+                id="share-button"
+                class="action-button action-button--secondary"
+                type="button"
+                aria-label="分享当前重置预报"
+                data-i18n-aria-label="actions.shareLabel"
+              >
+                <span class="button-weather-icon button-weather-icon--share" aria-hidden="true"></span>
+                <span data-i18n="actions.share">分享预报</span>
+              </button>
+            </div>
+            <p id="action-feedback" class="action-feedback" role="status" aria-live="polite" aria-atomic="true">
+              <span data-i18n="feedback.ready">操作台已就绪</span>
+            </p>
+          </aside>
+        </div>
+      </section>
+
+      <section id="factors" class="page-section" aria-labelledby="factors-title">
+        <div class="section-intro section-intro--split">
+          <div>
+            <p class="eyebrow" data-i18n="factors.eyebrow">PRESSURE MAP / 002</p>
+            <h2 id="factors-title" data-i18n="factors.title">主要影响因素</h2>
+          </div>
+          <p class="section-note" data-i18n="factors.note">
+            正向信号抬高预报，负向信号则将其压低。
+          </p>
+        </div>
+
+        <ol id="factors-list" class="factor-list" aria-live="polite" aria-busy="true">
+          <li class="factor-row skeleton-row">
+            <span class="factor-index">01</span>
+            <div class="factor-copy">
+              <strong data-i18n="factors.timePressure">时间周期压力</strong>
+              <span class="factor-track" aria-hidden="true"><span style="--factor-width: 62%;"></span></span>
+            </div>
+            <span class="factor-impact" data-i18n="common.waiting">等待数据</span>
+          </li>
+          <li class="factor-row skeleton-row">
+            <span class="factor-index">02</span>
+            <div class="factor-copy">
+              <strong data-i18n="factors.officialSignal">官方变更信号</strong>
+              <span class="factor-track" aria-hidden="true"><span style="--factor-width: 41%;"></span></span>
+            </div>
+            <span class="factor-impact" data-i18n="common.waiting">等待数据</span>
+          </li>
+          <li class="factor-row skeleton-row">
+            <span class="factor-index">03</span>
+            <div class="factor-copy">
+              <strong data-i18n="factors.communitySignal">社区讨论强度</strong>
+              <span class="factor-track" aria-hidden="true"><span style="--factor-width: 27%;"></span></span>
+            </div>
+            <span class="factor-impact" data-i18n="common.waiting">等待数据</span>
+          </li>
+        </ol>
+      </section>
+
+      <section id="signals" class="page-section" aria-labelledby="signals-title">
+        <div class="section-intro section-intro--split">
+          <div>
+            <p class="eyebrow" data-i18n="signals.eyebrow">SIGNAL ARRAY / 003</p>
+            <h2 id="signals-title" data-i18n="signals.title">当前信号</h2>
+          </div>
+          <p class="section-note" data-i18n="signals.note">
+            从本地镜像中分别选取三类来源的最新观测。
+          </p>
+        </div>
+
+        <div id="signals-list" class="signal-grid" aria-live="polite" aria-busy="true">
+          <article id="signal-tibo" class="glass-panel signal-card" data-signal-source="tibo">
+            <header class="signal-card__header">
+              <span class="signal-source signal-source--tibo">Tibo</span>
+              <time datetime="" data-i18n="common.pending">待载入</time>
+            </header>
+            <p data-i18n="signals.tiboFallback">正在定位最新的 Tibo 公开信号。</p>
+            <span class="signal-strength" data-i18n="signals.scanning">扫描中</span>
+          </article>
+          <article id="signal-openai" class="glass-panel signal-card" data-signal-source="openai">
+            <header class="signal-card__header">
+              <span class="signal-source signal-source--openai">OpenAI</span>
+              <time datetime="" data-i18n="common.pending">待载入</time>
+            </header>
+            <p data-i18n="signals.openaiFallback">正在定位最新的 OpenAI 公开信号。</p>
+            <span class="signal-strength" data-i18n="signals.scanning">扫描中</span>
+          </article>
+          <article id="signal-community" class="glass-panel signal-card" data-signal-source="community">
+            <header class="signal-card__header">
+              <span class="signal-source signal-source--community" data-i18n="signals.community">社区</span>
+              <time datetime="" data-i18n="common.pending">待载入</time>
+            </header>
+            <p data-i18n="signals.communityFallback">正在定位最新的社区讨论信号。</p>
+            <span class="signal-strength" data-i18n="signals.scanning">扫描中</span>
+          </article>
+        </div>
+      </section>
+
+      <section id="history" class="page-section" aria-labelledby="history-title">
+        <div class="section-intro section-intro--split">
+          <div>
+            <p class="eyebrow" data-i18n="history.eyebrow">PRESSURE TRACE / 004</p>
+            <h2 id="history-title" data-i18n="history.title">24 小时概率轨迹</h2>
+          </div>
+          <div
+            class="chart-legend"
+            aria-label="图表图例"
+            data-i18n-aria-label="history.legendLabel"
+          >
+            <span><i class="legend-line legend-line--ice" aria-hidden="true"></i><span data-i18n="history.probability">24h 概率</span></span>
+            <span><i class="legend-line legend-line--coral" aria-hidden="true"></i><span data-i18n="history.watchLine">关注线 60%</span></span>
+          </div>
+        </div>
+
+        <div class="glass-panel chart-panel">
+          <svg
+            id="history-chart"
+            class="history-chart"
+            viewBox="0 0 960 360"
+            role="img"
+            aria-labelledby="history-chart-title history-chart-summary"
+            preserveAspectRatio="none"
+          >
+            <title id="history-chart-title" data-i18n="history.chartTitle">24 小时重置概率折线图</title>
+            <desc id="history-chart-summary" data-i18n="history.chartSummary">
+              正在读取概率历史；当前显示为等待数据的示意轨迹。
+            </desc>
+            <defs>
+              <linearGradient id="history-fill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#8fe0ff" stop-opacity="0.32"></stop>
+                <stop offset="100%" stop-color="#8fe0ff" stop-opacity="0"></stop>
+              </linearGradient>
+              <linearGradient id="history-stroke" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#6889ff"></stop>
+                <stop offset="55%" stop-color="#8fe0ff"></stop>
+                <stop offset="100%" stop-color="#ff7b72"></stop>
+              </linearGradient>
+            </defs>
+            <g id="history-grid" class="chart-grid" aria-hidden="true">
+              <path d="M64 40H928 M64 110H928 M64 180H928 M64 250H928 M64 320H928"></path>
+              <path d="M64 40V320 M280 40V320 M496 40V320 M712 40V320 M928 40V320"></path>
+              <path class="watch-line" d="M64 152H928"></path>
+            </g>
+            <path
+              id="history-area"
+              class="chart-area chart-placeholder"
+              d="M64 278 C170 260 205 282 310 238 S480 248 565 211 S720 231 810 184 S890 205 928 168 L928 320 L64 320Z"
+              fill="url(#history-fill)"
+              aria-hidden="true"
+            ></path>
+            <path
+              id="history-path"
+              class="chart-line chart-placeholder"
+              d="M64 278 C170 260 205 282 310 238 S480 248 565 211 S720 231 810 184 S890 205 928 168"
+              fill="none"
+              stroke="url(#history-stroke)"
+              aria-hidden="true"
+            ></path>
+            <g class="chart-axis-labels" aria-hidden="true">
+              <text x="64" y="346">-24H</text>
+              <text x="480" y="346">-12H</text>
+              <text x="900" y="346">NOW</text>
+              <text x="18" y="46">100</text>
+              <text x="30" y="326">0</text>
+            </g>
+          </svg>
+
+          <div class="chart-readings">
+            <div>
+              <span data-i18n="history.current">当前</span>
+              <strong id="history-current">--%</strong>
+            </div>
+            <div>
+              <span data-i18n="history.high">区间高点</span>
+              <strong id="history-high">--%</strong>
+            </div>
+            <div>
+              <span data-i18n="history.low">区间低点</span>
+              <strong id="history-low">--%</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="performance" class="page-section" aria-labelledby="performance-title">
+        <div class="section-intro section-intro--split">
+          <div>
+            <p class="eyebrow" data-i18n="performance.eyebrow">MODEL LOG / 005</p>
+            <h2 id="performance-title" data-i18n="performance.title">模型表现</h2>
+          </div>
+          <p class="section-note section-note--caution" data-i18n="performance.caution">
+            以下是上游项目报告值，不代表本站独立验证。
+          </p>
+        </div>
+
+        <div id="performance-metrics" class="metric-grid" aria-live="polite" aria-busy="true">
+          <article class="metric-card">
+            <span class="metric-code">N</span>
+            <span class="metric-label" data-i18n="performance.total">预测总数</span>
+            <strong id="metric-total">—</strong>
+            <span class="metric-foot" data-i18n="performance.upstream">上游记录</span>
+          </article>
+          <article class="metric-card metric-card--ice">
+            <span class="metric-code">ACC</span>
+            <span class="metric-label" data-i18n="performance.accuracy">整体准确率</span>
+            <strong id="metric-accuracy">—</strong>
+            <span class="metric-foot" data-i18n="performance.upstream">上游记录</span>
+          </article>
+          <article class="metric-card metric-card--coral">
+            <span class="metric-code">BRI</span>
+            <span class="metric-label" data-i18n="performance.brier">Brier 分数</span>
+            <strong id="metric-brier">—</strong>
+            <span class="metric-foot" data-i18n="performance.lowerBetter">越低越好</span>
+          </article>
+          <article class="metric-card metric-card--amber">
+            <span class="metric-code">R</span>
+            <span class="metric-label" data-i18n="performance.resolved">已结算预测</span>
+            <strong id="metric-resolved">—</strong>
+            <span class="metric-foot" data-i18n="performance.upstream">上游记录</span>
+          </article>
+        </div>
+      </section>
+
+      <section id="resets" class="page-section" aria-labelledby="resets-title">
+        <div class="section-intro section-intro--split">
+          <div>
+            <p class="eyebrow" data-i18n="resets.eyebrow">EVENT ARCHIVE / 006</p>
+            <h2 id="resets-title" data-i18n="resets.title">历史重置记录</h2>
+          </div>
+          <p class="section-note" data-i18n="resets.note">
+            只展示镜像中可识别的全局 hard reset 事件。
+          </p>
+        </div>
+
+        <ol id="reset-timeline" class="reset-timeline" aria-live="polite" aria-busy="true">
+          <li class="reset-event reset-event--placeholder">
+            <span class="reset-event__marker" aria-hidden="true"></span>
+            <div class="reset-event__date">
+              <time datetime="" data-i18n="common.pending">待载入</time>
+              <span data-i18n="resets.globalEvent">全局重置事件</span>
+            </div>
+            <p data-i18n="resets.fallback">正在校准并去重历史记录。</p>
+            <span class="reset-event__source" data-i18n="resets.sourcePending">来源待核对</span>
+          </li>
+        </ol>
+      </section>
+
+      <section id="methodology" class="page-section methodology-section" aria-labelledby="methodology-title">
+        <div class="methodology-orbit" aria-hidden="true"></div>
+        <div class="section-intro">
+          <p class="eyebrow" data-i18n="methodology.eyebrow">FIELD NOTES / 007</p>
+          <h2 id="methodology-title" data-i18n="methodology.title">数据方法与边界</h2>
+        </div>
+
+        <div class="methodology-grid">
+          <article class="method-card method-card--wide">
+            <span class="method-number">01</span>
+            <h3 data-i18n="methodology.mirrorTitle">本地镜像，不直连社交平台</h3>
+            <p data-i18n="methodology.body">
+              本站定时镜像第三方项目已公开的预测、信号、表现与历史 JSON，访客只会读取本站的相对路径数据。
+            </p>
+          </article>
+          <article class="method-card">
+            <span class="method-number">02</span>
+            <h3 data-i18n="methodology.scopeTitle">预测对象</h3>
+            <p data-i18n="methodology.scope">
+              观测对象是额外全局 hard reset；普通周刷新、banked reset 与 boost / unlock 不应被视为同一事件。
+            </p>
+          </article>
+          <article class="method-card">
+            <span class="method-number">03</span>
+            <h3 data-i18n="methodology.readingTitle">如何阅读</h3>
+            <p data-i18n="methodology.reading">
+              概率是不确定性的温度计，不是承诺。请结合更新时间、原始信号与自己的剩余额度判断。
+            </p>
+          </article>
+        </div>
+
+        <aside
+          class="disclaimer"
+          aria-label="非官方免责声明"
+          data-i18n-aria-label="methodology.disclaimerLabel"
+        >
+          <span class="disclaimer__mark" aria-hidden="true">!</span>
+          <p data-i18n="methodology.disclaimer">
+            Tibo Reset 是非官方、仅供娱乐与信息参考的观测工具，与 OpenAI、Thibault Sottiaux 及上游参考站均无隶属、授权或背书关系。
+          </p>
+        </aside>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p><strong>Tibo Reset</strong> <span data-i18n="footer.note">— 在深夜里，把不确定性看得更清楚。</span></p>
+      <p class="footer-status"><span aria-hidden="true"></span><span data-i18n="footer.localData">仅读取本站镜像数据</span></p>
+    </footer>
+
+    <noscript>
+      <div class="noscript-banner" data-i18n="noscript.message">
+        JavaScript 未启用：页面骨架仍可阅读，但实时概率、倒计时和信号不会更新。
+      </div>
+    </noscript>
+  </body>
+</html>
