@@ -8,6 +8,66 @@ const test = require('node:test');
 const ROOT = path.resolve(__dirname, '..');
 const controller = require(path.join(ROOT, 'site', 'app.js'));
 
+const EDGE_NOW = Date.parse('2026-08-11T00:05:00Z');
+const EDGE_URL = 'https://edge.example/v1/bundle.json';
+
+function validBundle(overrides = {}) {
+  const timestamp = '2026-08-11T00:04:00Z';
+  const prediction = {
+    updated_at: timestamp,
+    prediction: { within_5h: 0.5, within_24h: 0.8, within_48h: 0.9 },
+    confidence: 'high',
+  };
+  return {
+    schema: 1,
+    synced_at: timestamp,
+    overall_status: 'ok',
+    sources: [
+      'prediction.json',
+      'prediction_history.json',
+      'tweets.json',
+      'model_performance.json',
+      'reset_history.json',
+    ].map((name) => ({ name, status: 'fresh', error: null })),
+    data: {
+      prediction,
+      predictionHistory: [{ prediction_time: timestamp, prediction: prediction.prediction }],
+      tweets: [],
+      performance: {
+        total_predictions: 1,
+        resolved_predictions: 1,
+        overall_brier_score: 0.2,
+        overall_accuracy: 1,
+        updated_at: timestamp,
+        horizons: [{ horizon_hours: 24, total: 1, brier_score: 0.2, accuracy: 1 }],
+      },
+      resetHistory: [],
+    },
+    ...overrides,
+  };
+}
+
+function pagePayloads(marker = 'pages') {
+  const timestamp = '2026-08-11T00:03:00Z';
+  return {
+    './data/prediction.json': {
+      marker,
+      updated_at: timestamp,
+      prediction: { within_5h: 0.4, within_24h: 0.7, within_48h: 0.85 },
+    },
+    './data/prediction_history.json': [],
+    './data/tweets.json': [],
+    './data/model_performance.json': { marker },
+    './data/reset_history.json': [],
+    './data/sync-status.json': {
+      schema: 1,
+      synced_at: timestamp,
+      overall_status: 'ok',
+      sources: [],
+    },
+  };
+}
+
 test('normalizes and formats only finite probabilities in the closed unit interval', () => {
   assert.equal(controller.normalizeProbability(0), 0);
   assert.equal(controller.normalizeProbability(1), 1);
@@ -90,6 +150,10 @@ test('trusts signals only when source, author, host and time satisfy the categor
   assert.equal(controller.classifySignal({
     ...validCommunity,
     url: 'https://reddit.com.evil.example/r/OpenAI',
+  }), null);
+  assert.equal(controller.classifySignal({
+    ...validTibo,
+    url: 'https://x.com/attacker/status/123',
   }), null);
 
   const selected = controller.selectLatestSignals([
@@ -387,7 +451,7 @@ test('both translation dictionaries cover every HTML key', () => {
   }
 });
 
-test('controller uses all six local sources, allSettled and text-only DOM writes', () => {
+test('controller uses all six local sources, atomic loading and text-only DOM writes', () => {
   assert.deepEqual(controller.DATA_SOURCES, [
     './data/prediction.json',
     './data/prediction_history.json',
@@ -397,9 +461,226 @@ test('controller uses all six local sources, allSettled and text-only DOM writes
     './data/sync-status.json',
   ]);
   const source = fs.readFileSync(path.join(ROOT, 'site', 'app.js'), 'utf8');
-  assert.match(source, /Promise\.allSettled/);
+  assert.match(source, /Promise\.all\(/);
   assert.match(source, /\.textContent\s*=/);
   assert.doesNotMatch(source, /\.innerHTML\s*=|insertAdjacentHTML\s*\(/);
   const malicious = '<img src=x onerror=alert(1)> & <script>alert(2)</script>';
   assert.equal(controller.truncateText(malicious, 500), malicious);
+});
+
+test('edge runtime config fails closed and the deployed config uses the real Worker URL', () => {
+  assert.deepEqual(controller.normalizeEdgeConfig(), controller.DEFAULT_EDGE_CONFIG);
+  assert.equal(controller.REFRESH_INTERVAL_MS, 2 * 60 * 1000);
+  assert.equal(controller.normalizeEdgeConfig({
+    schema: 1,
+    edgeMode: 'primary',
+    edgeSnapshotUrl: '',
+  }).edgeMode, 'off');
+  assert.equal(controller.normalizeEdgeConfig({
+    schema: 1,
+    edgeMode: 'primary',
+    edgeSnapshotUrl: 'javascript:alert(1)',
+  }).edgeMode, 'off');
+  assert.deepEqual(controller.normalizeEdgeConfig({
+    schema: 1,
+    edgeMode: 'shadow',
+    edgeSnapshotUrl: EDGE_URL,
+    timeoutMs: 2500,
+    maxAgeSeconds: 300,
+  }), {
+    schema: 1,
+    edgeMode: 'shadow',
+    edgeSnapshotUrl: EDGE_URL,
+    timeoutMs: 2500,
+    maxAgeSeconds: 300,
+  });
+
+  const diskConfig = JSON.parse(
+    fs.readFileSync(path.join(ROOT, 'site', 'edge-config.json'), 'utf8'),
+  );
+  assert.ok(['shadow', 'primary'].includes(diskConfig.edgeMode));
+  assert.equal(
+    diskConfig.edgeSnapshotUrl,
+    'https://tibo-reset-data-mirror.tibo-reset-data-worker.workers.dev/v1/bundle.json',
+  );
+});
+
+test('strictly validates one fresh atomic edge bundle', () => {
+  const checked = controller.validateEdgeBundle(validBundle(), EDGE_NOW, 7 * 60 * 1000);
+  assert.equal(checked.syncStatus.overall_status, 'ok');
+  assert.equal(checked.prediction.prediction.within_24h, 0.8);
+
+  assert.throws(
+    () => controller.validateEdgeBundle(validBundle({ schema: 2 }), EDGE_NOW, 420000),
+    /schema/,
+  );
+  const degraded = validBundle({ overall_status: 'degraded' });
+  degraded.sources[0] = { ...degraded.sources[0], status: 'cached', error: 'upstream timeout' };
+  const checkedDegraded = controller.validateEdgeBundle(degraded, EDGE_NOW, 420000);
+  assert.equal(checkedDegraded.syncStatus.overall_status, 'degraded');
+  assert.equal(checkedDegraded.syncStatus.sources[0].status, 'cached');
+  assert.throws(
+    () => controller.validateEdgeBundle(validBundle({ overall_status: 'failed' }), EDGE_NOW, 420000),
+    /status/,
+  );
+  const stale = validBundle({ synced_at: '2026-08-10T23:00:00Z' });
+  assert.throws(() => controller.validateEdgeBundle(stale, EDGE_NOW, 420000), /stale/);
+  const partial = validBundle();
+  delete partial.data.resetHistory;
+  assert.throws(() => controller.validateEdgeBundle(partial, EDGE_NOW, 420000), /data/);
+});
+
+test('rejects malformed nested edge data and atomically uses the Pages fallback', async () => {
+  const corruptions = [
+    (bundle) => { bundle.data.predictionHistory[0].prediction.within_24h = 2; },
+    (bundle) => { bundle.data.predictionHistory[0].prediction_time = 'not-a-time'; },
+    (bundle) => {
+      bundle.data.tweets = [{
+        timestamp: '2026-08-11T00:04:00Z',
+        author: 'Tibo',
+        text: 'forged signal',
+        source: 'tibo_rss',
+        url: 'https://x.com/attacker/status/123',
+        authority_score: 0.9,
+      }];
+    },
+    (bundle) => { delete bundle.data.performance.total_predictions; },
+    (bundle) => { bundle.data.performance.horizons[0].accuracy = 3; },
+    (bundle) => {
+      bundle.data.resetHistory = [{
+        reset_time: '2026-08-10T00:00:00Z',
+        source: 'x',
+        confidence: 4,
+        notes: 'forged reset',
+      }];
+    },
+  ];
+
+  for (const corrupt of corruptions) {
+    const bundle = validBundle();
+    corrupt(bundle);
+    assert.throws(
+      () => controller.validateEdgeBundle(bundle, EDGE_NOW, 420000),
+      /edge bundle/,
+    );
+  }
+
+  const badEdge = validBundle();
+  delete badEdge.data.performance.total_predictions;
+  const pages = pagePayloads('nested-fallback');
+  const result = await controller.loadDataSnapshot({
+    config: { schema: 1, edgeMode: 'primary', edgeSnapshotUrl: EDGE_URL },
+    now: () => EDGE_NOW,
+    fetchJson(url) {
+      return Promise.resolve(url === EDGE_URL ? badEdge : pages[url]);
+    },
+  });
+  assert.equal(result.source, 'pages-fallback');
+  assert.equal(result.raw.prediction.marker, 'nested-fallback');
+});
+
+test('off mode never requests edge and returns one complete Pages snapshot', async () => {
+  const payloads = pagePayloads();
+  const calls = [];
+  const result = await controller.loadDataSnapshot({
+    config: { schema: 1, edgeMode: 'off', edgeSnapshotUrl: '' },
+    now: () => EDGE_NOW,
+    fetchJson(url) {
+      calls.push(url);
+      return Promise.resolve(payloads[url]);
+    },
+  });
+  assert.equal(result.source, 'pages');
+  assert.deepEqual(calls, controller.DATA_SOURCES);
+  assert.equal(calls.includes(EDGE_URL), false);
+  assert.equal(result.raw.prediction.marker, 'pages');
+});
+
+test('primary uses a valid edge bundle and atomically falls back to all Pages files', async () => {
+  const edgeCalls = [];
+  const edgeResult = await controller.loadDataSnapshot({
+    config: { schema: 1, edgeMode: 'primary', edgeSnapshotUrl: EDGE_URL },
+    now: () => EDGE_NOW,
+    fetchJson(url) {
+      edgeCalls.push(url);
+      return Promise.resolve(validBundle());
+    },
+  });
+  assert.equal(edgeResult.source, 'edge');
+  assert.deepEqual(edgeCalls, [EDGE_URL]);
+  assert.equal(edgeResult.raw.prediction.prediction.within_24h, 0.8);
+
+  const payloads = pagePayloads('fallback');
+  const fallbackCalls = [];
+  const fallbackResult = await controller.loadDataSnapshot({
+    config: { schema: 1, edgeMode: 'primary', edgeSnapshotUrl: EDGE_URL },
+    now: () => EDGE_NOW,
+    fetchJson(url) {
+      fallbackCalls.push(url);
+      if (url === EDGE_URL) {
+        return Promise.reject(new Error('edge timeout'));
+      }
+      return Promise.resolve(payloads[url]);
+    },
+  });
+  assert.equal(fallbackResult.source, 'pages-fallback');
+  assert.deepEqual(fallbackCalls, [EDGE_URL, ...controller.DATA_SOURCES]);
+  assert.equal(fallbackResult.raw.prediction.marker, 'fallback');
+  assert.equal(fallbackResult.edgeHealth.status, 'failed');
+
+  const staleCalls = [];
+  const staleBundle = validBundle({ synced_at: '2026-08-10T23:00:00Z' });
+  const staleResult = await controller.loadDataSnapshot({
+    config: { schema: 1, edgeMode: 'primary', edgeSnapshotUrl: EDGE_URL },
+    now: () => EDGE_NOW,
+    fetchJson(url) {
+      staleCalls.push(url);
+      return Promise.resolve(url === EDGE_URL ? staleBundle : payloads[url]);
+    },
+  });
+  assert.equal(staleResult.source, 'pages-fallback');
+  assert.deepEqual(staleCalls, [EDGE_URL, ...controller.DATA_SOURCES]);
+});
+
+test('shadow records edge health but always renders the complete Pages snapshot', async () => {
+  const payloads = pagePayloads('shadow-pages');
+  const result = await controller.loadDataSnapshot({
+    config: { schema: 1, edgeMode: 'shadow', edgeSnapshotUrl: EDGE_URL },
+    now: () => EDGE_NOW,
+    fetchJson(url) {
+      return Promise.resolve(url === EDGE_URL ? validBundle() : payloads[url]);
+    },
+  });
+  assert.equal(result.source, 'pages');
+  assert.equal(result.raw.prediction.marker, 'shadow-pages');
+  assert.equal(result.edgeHealth.status, 'ok');
+
+  const unhealthy = await controller.loadDataSnapshot({
+    config: { schema: 1, edgeMode: 'shadow', edgeSnapshotUrl: EDGE_URL },
+    now: () => EDGE_NOW,
+    fetchJson(url) {
+      return url === EDGE_URL
+        ? Promise.reject(new Error('shadow probe failed'))
+        : Promise.resolve(payloads[url]);
+    },
+  });
+  assert.equal(unhealthy.source, 'pages');
+  assert.equal(unhealthy.edgeHealth.status, 'failed');
+  assert.match(unhealthy.edgeHealth.error, /shadow probe failed/);
+});
+
+test('a failed Pages generation rejects instead of mixing old and new files', async () => {
+  const payloads = pagePayloads();
+  await assert.rejects(
+    controller.loadDataSnapshot({
+      config: { schema: 1, edgeMode: 'off', edgeSnapshotUrl: '' },
+      fetchJson(url) {
+        if (url === './data/tweets.json') {
+          return Promise.reject(new Error('missing generation member'));
+        }
+        return Promise.resolve(payloads[url]);
+      },
+    }),
+    /missing generation member/,
+  );
 });

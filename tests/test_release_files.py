@@ -189,17 +189,19 @@ class PagesWorkflowContractTests(unittest.TestCase):
 
 
 class SupplyChainAndNoticeContractTests(unittest.TestCase):
-    def test_dependabot_reviews_github_actions_weekly_only(self) -> None:
+    def test_dependabot_reviews_actions_and_worker_dependencies_weekly(self) -> None:
         self.assertTrue(DEPENDABOT.is_file(), ".github/dependabot.yml is required")
         dependabot = DEPENDABOT.read_text(encoding="utf-8")
         for token in (
             "version: 2",
             'package-ecosystem: "github-actions"',
             'directory: "/"',
+            'package-ecosystem: "npm"',
+            'directory: "/worker"',
             "interval: \"weekly\"",
         ):
             self.assertIn(token, dependabot)
-        self.assertEqual(1, dependabot.count("package-ecosystem:"))
+        self.assertEqual(2, dependabot.count("package-ecosystem:"))
 
     def test_root_and_deployed_notices_cover_sources_rights_and_contact(self) -> None:
         self.assertTrue(THIRD_PARTY_NOTICE.is_file(), "root notice is required")

@@ -398,6 +398,19 @@ class TweetSecurityTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     sync_data.validate_payload(self.source, payload)
 
+    def test_tibo_source_requires_thsottiaux_numeric_status_path(self) -> None:
+        for url in (
+            "https://x.com/attacker/status/123",
+            "https://x.com/thsottiaux/likes",
+            "https://twitter.com/thsottiaux/status/not-digits",
+        ):
+            with self.subTest(url=url):
+                with self.assertRaisesRegex(ValueError, "url"):
+                    sync_data.validate_payload(
+                        self.source,
+                        [tweet_payload(url=url)],
+                    )
+
     def test_tweets_reject_timestamp_more_than_24_hours_in_future(self) -> None:
         future = datetime.now(timezone.utc) + timedelta(hours=25)
         payload = [tweet_payload(timestamp=future.isoformat().replace("+00:00", "Z"))]

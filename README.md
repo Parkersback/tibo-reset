@@ -4,13 +4,15 @@
 
 > 本站关注的是可能发生的**额外全局 hard reset**。常规的 `weekly reset`、`banked reset` 与 `boost/unlock` 是不同机制，不能当作同一种事件解读。
 
-本站不自研概率模型，不使用 OpenAI API，也不使用 X API；页面展示的是上游公开预测与指标的镜像，并非实时读取 X。
+本站不自研概率模型，不使用 OpenAI API，也不使用 X API；页面展示的是上游公开预测与指标的镜像，并非实时读取 X。Cloudflare 边缘同步启用后会缩短镜像延迟，但仍不承诺秒级实时。
 
 ## 当前状态与截图
 
 功能代码、本地启动器与 GitHub Pages 部署均已完成。Playwright 桌面端与移动端截图已生成在本机 `output/playwright/`（该 QA 目录不进入发布包）；融合 Tibo 面部参考的原创主视觉随站点发布在 `site/assets/reset-oracle-card-tibo.webp`。
 
 线上地址是 <https://parkersback.github.io/tibo-reset/>；每次发布仍需以 GitHub Actions 成功和线上 HTTP 200 验证为准。
+
+Cloudflare Worker 已发布到 <https://tibo-reset-data-mirror.tibo-reset-data-worker.workers.dev/>；运行配置完成观测后使用 `primary`，任何超时、错误、坏结构或过期快照都会整份回退 Pages 镜像。紧急回滚只需把 `edgeMode` 改为 `off`。
 
 ## 功能
 
@@ -57,12 +59,16 @@ python -m http.server 4178 --bind 127.0.0.1 --directory site
 
 ## 数据同步架构
 
-浏览器只读取 `site/data/` 中的本站镜像，不会让每位访问者直接请求参考站：
+网站采用两层同步：Cloudflare Worker + Workers KV 是低延迟主链路，`site/data/` 中的 GitHub Pages 镜像是独立兜底。浏览器和 Worker 都不会调用 X API，也不会把每位访问者直接转发到参考站。
 
 ```text
-公开 JSON -> scripts/sync_data.py -> 下载并校验 -> 临时文件 -> 原子替换 site/data/*.json
-                                                     -> 写入 sync-status.json
-site/app.js <- 相对路径 ./data/*.json <- 本地服务器或 GitHub Pages
+                         -> Cloudflare Worker 每 5 分钟校验 -> Durable Object 串行刷新
+                                                           -> 单个 Workers KV 原子快照
+5 个公开 JSON 来源 ----|                                      -> /v1/bundle.json
+                         -> GitHub Actions 约每 20 分钟校验 -> site/data/*.json
+
+浏览器 -> edge primary 快照
+       -> Worker 超时、错误、结构无效或过期时，整份回退 Pages 兜底
 ```
 
 五个确切的公开来源是：
@@ -73,7 +79,15 @@ site/app.js <- 相对路径 ./data/*.json <- 本地服务器或 GitHub Pages
 4. [model_performance.json](https://willtiboreset.xyz/data/model_performance.json)
 5. [reset_history.json](https://raw.githubusercontent.com/EvanProgramming/willtiboreset/main/data/reset_history.json)
 
-同步器逐个下载并校验 JSON 结构，只在新数据有效时原子替换旧镜像。单个来源暂时不可用时，会保留通过校验的上一份缓存，并在 `site/data/sync-status.json` 标记 `degraded` 降级和具体错误；它不会用空文件或坏数据覆盖缓存。若失败来源没有有效缓存，同步器返回失败，GitHub Actions 也会停止而不部署不完整数据。
+两条同步链路执行相同的关键安全边界：固定 HTTPS 来源、响应大小限制、JSON 结构/概率/时间校验，以及推文最小字段、账号路径和可信来源组合。Worker 用单例 Durable Object 串行化刷新，避免并发任务把旧结果写回；五类数据通过后写进同一个版本化 KV bundle。某个来源失败时只会短期沿用该来源上一份已验证数据并标记 `degraded`，过期缓存、坏数据和超过 KV 限额的快照都不会覆盖好版本。Pages 同步器逐个下载并校验，只在新数据有效时原子替换旧镜像；若失败来源没有有效缓存，GitHub Actions 会停止发布不完整数据。
+
+前端运行配置在 `site/edge-config.json`，有三种 `edgeMode`：
+
+- `off`：完全读取 Pages；用于紧急回滚，空地址绝不产生边缘请求。
+- `shadow`：同时验证 Worker 和 Pages，但页面仍展示 Pages，用于切换前观测。
+- `primary`：优先读取 Worker 的单个原子快照，任何异常都整份回退 Pages 兜底，不把两边的数据混在一起。
+
+每 5 分钟 Cron 是同步目标，不是精确时钟；Cloudflare 调度、KV 跨区域传播、上游更新时间和浏览器轮询都会增加延迟。因此页面显示实际更新时间，本站不承诺秒级实时，也不能保证每次都在固定分钟更新。
 
 这些端点属于上游公开数据来源，本仓库只做镜像、结构校验和展示。推文信号是上游已经公开的 JSON，不是本站调用实时 X API 获得的内容。
 
@@ -97,9 +111,13 @@ site/app.js <- 相对路径 ./data/*.json <- 本地服务器或 GitHub Pages
 python -m unittest discover -s tests -p "test_*.py"
 python tests/check_static.py
 node --check site/app.js
+Set-Location worker
+npm ci
+npm test
+npm run check
 ```
 
-第一条运行同步器、启动器、前端控制器和发布合同等单元测试；第二条验证静态文件、JSON、页面区块和相对数据路径；第三条检查浏览器 JavaScript 语法。
+Python 测试覆盖同步器、启动器、前端控制器和发布合同；静态合同验证发布文件、JSON 与页面区块；Node 命令检查浏览器代码和 Worker 的验证、降级、CORS、KV 快照行为。
 
 ## GitHub Pages 部署与维护
 
@@ -108,6 +126,33 @@ node --check site/app.js
 工作流使用 Python 3.13，先执行同步命令，再读取 `site/data/sync-status.json`。只有 `overall_status` 严格等于 `ok` 才继续；即使同步器因存在旧缓存而返回成功，`degraded` 或 cached 降级也会让 job 非零退出，保留上一版 Pages，不允许仓库旧缓存覆盖更新的线上版本。fresh gate 通过后仍需完成单元测试、静态合同和 Node 语法检查，最后才上传 `./site`。工作流不提交数据、不执行 `git push`、不需要仓库 secrets，也不访问 X API。
 
 仓库 Pages 来源已使用 **GitHub Actions**。GitHub 可能在仓库长期无活动后自动停用计划工作流；维护者应检查 Actions 状态，并可用 `workflow_dispatch` 手动刷新与部署。
+
+## Cloudflare Worker 启用与维护
+
+Worker 代码和锁定依赖位于 `worker/`。当前生产 Worker、KV namespace 与 5 分钟 Cron 已创建；KV namespace ID 只是公开资源标识，不是密钥。仓库不包含 OAuth Token 或 API Token。本机维护时先完成身份验证：
+
+```powershell
+Set-Location 'D:\桌面\Tibo-Reset\worker'
+npm ci
+npx wrangler login --use-keyring
+npx wrangler whoami
+```
+
+随后执行：
+
+```powershell
+npm test
+npm run check
+npm run deploy
+```
+
+只有重新创建 Cloudflare 资源时才运行 `npx wrangler kv namespace create DATA_MIRROR`，并把新的真实 namespace ID 写入 `worker/wrangler.jsonc`。Worker 地址发生变化时，依次执行无中断切换：
+
+1. 把 `site/edge-config.json` 的地址填为 Worker `/v1/bundle.json`，`edgeMode` 先设为 `shadow`。
+2. 从正式 Pages Origin 连续检查 `/health`、CORS、五类数据和更新时间；同时模拟 Worker 404/超时，确认页面稳定回到 Pages。
+3. 验收通过后改为 `primary`；出现问题时把 `edgeMode` 改回 `off` 即可回滚，不需要停站。
+
+自动部署工作流是 `.github/workflows/worker.yml`。在 GitHub 仓库中安全设置 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` 两个 Actions secrets，并将仓库变量 `CLOUDFLARE_WORKER_ENABLED` 设为 `true` 后，Worker 目录的后续 `main` 更新才会触发部署。Token 应限定到目标 Cloudflare 账户和最小 Worker/KV 权限；不要写入配置、日志或提交历史。
 
 ## 免责声明与归属
 

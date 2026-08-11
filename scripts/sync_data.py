@@ -273,6 +273,13 @@ def _validate_https_url(value: Any, label: str) -> str:
     return parsed.hostname.lower()
 
 
+def _validate_status_url_handle(value: str, label: str, allowed: set[str]) -> None:
+    parsed = urlsplit(value)
+    match = re.fullmatch(r"/([^/]+)/status/(\d+)/?", parsed.path, re.IGNORECASE)
+    if match is None or match.group(1).lower() not in allowed:
+        raise ValueError(f"{label}: unexpected status account or path")
+
+
 def _validate_tweets(payload: list) -> None:
     expected_fields = set(TWEET_PUBLIC_FIELDS)
     future_limit = datetime.now(timezone.utc) + timedelta(hours=24)
@@ -308,6 +315,11 @@ def _validate_tweets(payload: list) -> None:
                 _host_is(hostname, domain) for domain in ("x.com", "twitter.com")
             ):
                 raise ValueError(f"{label}: invalid tibo_rss author or url")
+            _validate_status_url_handle(
+                url,
+                f"{label}.url",
+                {"thsottiaux"},
+            )
         elif source_name == "community_rss":
             if not _host_is(hostname, "reddit.com"):
                 raise ValueError(f"{label}.url: community_rss requires reddit.com")
@@ -317,6 +329,14 @@ def _validate_tweets(payload: list) -> None:
                 for domain in ("x.com", "twitter.com", "openai.com")
             ):
                 raise ValueError(f"{label}: invalid official author or url")
+            if any(
+                _host_is(hostname, domain) for domain in ("x.com", "twitter.com")
+            ):
+                _validate_status_url_handle(
+                    url,
+                    f"{label}.url",
+                    {"openai", "openaidevs", "chatgptapp"},
+                )
         else:
             raise ValueError(f"{label}.source: source is not allowlisted")
 

@@ -23,9 +23,17 @@
 
   var LANGUAGE_KEY = 'tibo-reset-language';
   var NOTIFICATION_KEY = 'tibo-reset-notifications';
-  var REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+  var REFRESH_INTERVAL_MS = 2 * 60 * 1000;
   var STALE_AFTER_MS = 90 * 60 * 1000;
   var MAX_HISTORY_POINTS = 160;
+  var EDGE_CONFIG_SOURCE = './edge-config.json';
+  var DEFAULT_EDGE_CONFIG = Object.freeze({
+    schema: 1,
+    edgeMode: 'off',
+    edgeSnapshotUrl: '',
+    timeoutMs: 4000,
+    maxAgeSeconds: 7 * 60
+  });
 
   var DATA_SOURCES = Object.freeze([
     './data/prediction.json',
@@ -43,6 +51,22 @@
     'performance',
     'resetHistory',
     'syncStatus'
+  ]);
+
+  var EDGE_DATA_KEYS = Object.freeze([
+    'prediction',
+    'predictionHistory',
+    'tweets',
+    'performance',
+    'resetHistory'
+  ]);
+
+  var EDGE_SOURCE_NAMES = Object.freeze([
+    'prediction.json',
+    'prediction_history.json',
+    'tweets.json',
+    'model_performance.json',
+    'reset_history.json'
   ]);
 
   var SIGNAL_POLICIES = Object.freeze({
@@ -90,13 +114,16 @@
       'status.cached': '正在显示缓存数据',
       'status.failed': '同步失败，暂无可用预测',
       'status.failedWithCache': '同步失败，继续显示已有缓存',
+      'status.sourceEdge': '边缘同步',
+      'status.sourcePagesFallback': 'Pages 备用',
+      'status.sourcePages': 'Pages 镜像',
       'header.updated': '最近更新',
       'nav.label': '页内导航',
       'nav.forecast': '预报',
       'nav.signals': '信号',
       'nav.history': '轨迹',
       'nav.methodology': '方法',
-      'actions.refreshLabel': '刷新本地镜像数据',
+      'actions.refreshLabel': '刷新预测镜像数据',
       'actions.refresh': '刷新',
       'actions.languageLabel': '切换为英文',
       'actions.language': 'EN',
@@ -183,8 +210,8 @@
       'resets.empty': '上游暂未提供可识别的 global hard reset 历史记录。',
       'methodology.eyebrow': 'FIELD NOTES / 007',
       'methodology.title': '数据方法与边界',
-      'methodology.mirrorTitle': '本地镜像，不直连社交平台',
-      'methodology.body': '本站定时镜像第三方项目已公开的预测、信号、表现与历史 JSON，访客只会读取本站的相对路径数据。',
+      'methodology.mirrorTitle': '双层镜像，不直连社交平台',
+      'methodology.body': '本站定时镜像第三方项目已公开的预测、信号、表现与历史 JSON；优先读取本站边缘快照，异常时整份回退 Pages 镜像。',
       'methodology.scopeTitle': '预测对象',
       'methodology.scope': '观测对象是额外全局 hard reset；普通周刷新、banked reset 与 boost / unlock 不应被视为同一事件。',
       'methodology.readingTitle': '如何阅读',
@@ -192,11 +219,13 @@
       'methodology.disclaimerLabel': '非官方免责声明',
       'methodology.disclaimer': 'ChatGPT 会不会重置？是非官方、仅供娱乐与信息参考的观测工具，与 OpenAI、Thibault Sottiaux 及上游参考站均无隶属、授权或背书关系。',
       'footer.note': '— 在深夜里，把不确定性看得更清楚。',
-      'footer.localData': '仅读取本站镜像数据',
-      'noscript.message': 'JavaScript 未启用：页面骨架仍可阅读，但实时概率、倒计时和信号不会更新。',
+      'footer.localData': '读取本站边缘或 Pages 镜像',
+      'noscript.message': 'JavaScript 未启用：页面骨架仍可阅读，但动态概率、倒计时和信号不会更新。',
       'feedback.ready': '操作台已就绪',
-      'feedback.refreshing': '正在刷新六个本地镜像数据源…',
+      'feedback.refreshing': '正在刷新预测数据快照…',
       'feedback.refreshed': '镜像数据已刷新。',
+      'feedback.refreshedEdge': '边缘快照已刷新。',
+      'feedback.refreshedPagesFallback': '边缘暂不可用，已切换 Pages 备用数据。',
       'feedback.partial': '部分来源读取失败，已保留其余可用数据。',
       'feedback.notifyUnsupported': '此浏览器不支持系统通知。',
       'feedback.notifyDenied': '通知权限未获授权；可在浏览器设置中修改。',
@@ -234,13 +263,16 @@
       'status.cached': 'Showing cached data',
       'status.failed': 'Sync failed; no forecast is available',
       'status.failedWithCache': 'Sync failed; continuing with cached data',
+      'status.sourceEdge': 'Edge sync',
+      'status.sourcePagesFallback': 'Pages fallback',
+      'status.sourcePages': 'Pages mirror',
       'header.updated': 'Last updated',
       'nav.label': 'Page navigation',
       'nav.forecast': 'Forecast',
       'nav.signals': 'Signals',
       'nav.history': 'History',
       'nav.methodology': 'Method',
-      'actions.refreshLabel': 'Refresh local mirror data',
+      'actions.refreshLabel': 'Refresh forecast mirror data',
       'actions.refresh': 'Refresh',
       'actions.languageLabel': 'Switch to Chinese',
       'actions.language': 'EN',
@@ -327,8 +359,8 @@
       'resets.empty': 'No recognizable global hard reset history is available upstream.',
       'methodology.eyebrow': 'FIELD NOTES / 007',
       'methodology.title': 'Data method and boundaries',
-      'methodology.mirrorTitle': 'Local mirror, no direct social-platform connection',
-      'methodology.body': 'The site periodically mirrors public prediction, signal, performance, and history JSON from a third-party project. Visitors read only this site’s relative data paths.',
+      'methodology.mirrorTitle': 'Two-layer mirror, no direct social-platform connection',
+      'methodology.body': 'The site periodically mirrors public prediction, signal, performance, and history JSON. It prefers this site’s edge snapshot and atomically falls back to the Pages mirror.',
       'methodology.scopeTitle': 'Forecast scope',
       'methodology.scope': 'The target is an extra global hard reset. Weekly refreshes, banked resets, boosts, and unlocks are not the same event.',
       'methodology.readingTitle': 'How to read it',
@@ -336,11 +368,13 @@
       'methodology.disclaimerLabel': 'Unofficial disclaimer',
       'methodology.disclaimer': 'Will ChatGPT Reset? is an unofficial tool for entertainment and information only. It is not affiliated with, authorized by, or endorsed by OpenAI, Thibault Sottiaux, or the upstream reference site.',
       'footer.note': '— Seeing uncertainty more clearly after dark.',
-      'footer.localData': 'Reads only this site’s mirrored data',
-      'noscript.message': 'JavaScript is disabled: the page structure remains readable, but live probability, countdown, and signals will not update.',
+      'footer.localData': 'Reads this site’s Edge or Pages mirror',
+      'noscript.message': 'JavaScript is disabled: the page structure remains readable, but dynamic probability, countdown, and signals will not update.',
       'feedback.ready': 'Action station ready',
-      'feedback.refreshing': 'Refreshing six local mirror sources…',
+      'feedback.refreshing': 'Refreshing the forecast data snapshot…',
       'feedback.refreshed': 'Mirror data refreshed.',
+      'feedback.refreshedEdge': 'Edge snapshot refreshed.',
+      'feedback.refreshedPagesFallback': 'Edge unavailable; switched to the Pages fallback.',
       'feedback.partial': 'Some sources failed; other usable data remains visible.',
       'feedback.notifyUnsupported': 'This browser does not support system notifications.',
       'feedback.notifyDenied': 'Notification permission was not granted. You can change it in browser settings.',
@@ -375,6 +409,10 @@
       syncStatus: null
     },
     model: null,
+    edgeConfig: DEFAULT_EDGE_CONFIG,
+    edgeHealth: { status: 'off', error: '' },
+    dataSource: 'pages',
+    configPromise: null,
     loadFailures: [],
     loadingPromise: null,
     refreshTimer: null,
@@ -490,6 +528,414 @@
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
   }
 
+  function boundedNumber(value, fallback, minimum, maximum) {
+    var number = Number(value);
+    return Number.isFinite(number) && number >= minimum && number <= maximum
+      ? number
+      : fallback;
+  }
+
+  function normalizedEdgeUrl(value) {
+    var candidate = safeString(value);
+    if (!candidate) {
+      return '';
+    }
+    try {
+      var parsed = new URL(candidate);
+      var localHttp = parsed.protocol === 'http:' && (
+        parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
+      );
+      var allowedProtocol = parsed.protocol === 'https:' || localHttp;
+      var expectedPath = parsed.pathname.endsWith('/v1/bundle.json');
+      if (
+        !allowedProtocol ||
+        !expectedPath ||
+        parsed.username ||
+        parsed.password ||
+        parsed.search ||
+        parsed.hash
+      ) {
+        return '';
+      }
+      return parsed.href;
+    } catch (error) {
+      return '';
+    }
+  }
+
+  function normalizeEdgeConfig(value) {
+    var source = isPlainObject(value) && value.schema === 1 ? value : {};
+    var allowedModes = ['off', 'shadow', 'primary'];
+    var requestedMode = safeString(source.edgeMode).toLowerCase();
+    var mode = allowedModes.indexOf(requestedMode) === -1 ? 'off' : requestedMode;
+    var snapshotUrl = normalizedEdgeUrl(source.edgeSnapshotUrl);
+    if (mode !== 'off' && !snapshotUrl) {
+      mode = 'off';
+    }
+    return {
+      schema: 1,
+      edgeMode: mode,
+      edgeSnapshotUrl: snapshotUrl,
+      timeoutMs: boundedNumber(
+        source.timeoutMs,
+        DEFAULT_EDGE_CONFIG.timeoutMs,
+        1000,
+        10000
+      ),
+      maxAgeSeconds: boundedNumber(
+        source.maxAgeSeconds,
+        DEFAULT_EDGE_CONFIG.maxAgeSeconds,
+        60,
+        1800
+      )
+    };
+  }
+
+  function edgeContract(condition, message) {
+    if (!condition) {
+      throw new Error('edge bundle ' + message);
+    }
+  }
+
+  function edgeString(value, label, maximum, minimum) {
+    var lowerBound = Number.isFinite(minimum) ? minimum : 1;
+    edgeContract(
+      typeof value === 'string' && value.length >= lowerBound && value.length <= maximum,
+      label + ' is invalid'
+    );
+    return value;
+  }
+
+  function edgeTimestamp(value, label) {
+    edgeString(value, label, 64);
+    edgeContract(/(?:Z|[+-]\d{2}:\d{2})$/.test(value), label + ' has no timezone');
+    var timestamp = toTimestamp(value);
+    edgeContract(timestamp !== null, label + ' is invalid');
+    return timestamp;
+  }
+
+  function edgeInteger(value, label, minimum, maximum) {
+    var lowerBound = Number.isFinite(minimum) ? minimum : 0;
+    var upperBound = Number.isFinite(maximum) ? maximum : 10000000;
+    edgeContract(
+      Number.isInteger(value) && value >= lowerBound && value <= upperBound,
+      label + ' is invalid'
+    );
+    return value;
+  }
+
+  function edgeProbability(value, label) {
+    edgeContract(
+      typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1,
+      label + ' is invalid'
+    );
+    return value;
+  }
+
+  function validateEdgePrediction(value, label) {
+    edgeContract(isPlainObject(value), label + ' is invalid');
+    ['within_5h', 'within_24h', 'within_48h'].forEach(function (horizon) {
+      edgeProbability(value[horizon], label + '.' + horizon);
+    });
+  }
+
+  function validateEdgePredictionDocument(value) {
+    edgeContract(isPlainObject(value), 'data prediction is invalid');
+    edgeTimestamp(value.updated_at, 'data prediction time');
+    validateEdgePrediction(value.prediction, 'data prediction probabilities');
+    if (Object.prototype.hasOwnProperty.call(value, 'confidence')) {
+      edgeContract(
+        ['low', 'medium', 'high'].indexOf(value.confidence) !== -1,
+        'data prediction confidence is invalid'
+      );
+    }
+    if (Object.prototype.hasOwnProperty.call(value, 'main_factors')) {
+      edgeContract(
+        Array.isArray(value.main_factors) && value.main_factors.length <= 100,
+        'data prediction factors are invalid'
+      );
+      value.main_factors.forEach(function (factor) {
+        edgeContract(isPlainObject(factor), 'data prediction factor is invalid');
+        if (Object.prototype.hasOwnProperty.call(factor, 'factor')) {
+          edgeString(factor.factor, 'data prediction factor text', 500);
+        }
+      });
+    }
+    if (Object.prototype.hasOwnProperty.call(value, 'reasons')) {
+      edgeContract(
+        Array.isArray(value.reasons) && value.reasons.length <= 100,
+        'data prediction reasons are invalid'
+      );
+      value.reasons.forEach(function (reason) {
+        edgeString(reason, 'data prediction reason', 1000);
+      });
+    }
+  }
+
+  function validateEdgePredictionHistory(items) {
+    edgeContract(Array.isArray(items) && items.length <= 10000, 'data history is invalid');
+    items.forEach(function (item) {
+      edgeContract(isPlainObject(item), 'data history item is invalid');
+      edgeTimestamp(item.prediction_time, 'data history time');
+      validateEdgePrediction(item.prediction, 'data history prediction');
+      if (Object.prototype.hasOwnProperty.call(item, 'actual_result')) {
+        edgeContract(
+          item.actual_result === null || typeof item.actual_result === 'boolean',
+          'data history result is invalid'
+        );
+      }
+      if (Object.prototype.hasOwnProperty.call(item, 'resolved_at') && item.resolved_at !== null) {
+        edgeTimestamp(item.resolved_at, 'data history resolved time');
+      }
+    });
+  }
+
+  function validateEdgeTweets(items, now) {
+    var publicFields = [
+      'timestamp', 'author', 'text', 'source', 'url', 'authority_score'
+    ];
+    edgeContract(Array.isArray(items) && items.length <= 500, 'data tweets are invalid');
+    items.forEach(function (item) {
+      edgeContract(isPlainObject(item), 'data tweet is invalid');
+      var keys = Object.keys(item).sort();
+      edgeContract(
+        keys.join('|') === publicFields.slice().sort().join('|'),
+        'data tweet fields are invalid'
+      );
+      var timestamp = edgeTimestamp(item.timestamp, 'data tweet time');
+      edgeContract(timestamp <= now + 24 * 60 * 60 * 1000, 'data tweet time is in the future');
+      edgeString(item.author, 'data tweet author', 100);
+      edgeString(item.text, 'data tweet text', 361);
+      edgeString(item.source, 'data tweet source', 32);
+      edgeString(item.url, 'data tweet url', 2048);
+      edgeProbability(item.authority_score, 'data tweet authority');
+      edgeContract(Boolean(classifySignal(item)), 'data tweet identity is not trusted');
+    });
+  }
+
+  function validateEdgePerformance(value) {
+    edgeContract(isPlainObject(value), 'data performance is invalid');
+    var total = edgeInteger(value.total_predictions, 'data performance total');
+    var resolved = edgeInteger(value.resolved_predictions, 'data performance resolved');
+    edgeContract(resolved <= total, 'data performance resolved exceeds total');
+    edgeProbability(value.overall_brier_score, 'data performance brier');
+    edgeProbability(value.overall_accuracy, 'data performance accuracy');
+    edgeTimestamp(value.updated_at, 'data performance time');
+    edgeContract(
+      Array.isArray(value.horizons) && value.horizons.length >= 1 && value.horizons.length <= 24,
+      'data performance horizons are invalid'
+    );
+    var seenHours = {};
+    value.horizons.forEach(function (horizon) {
+      edgeContract(isPlainObject(horizon), 'data performance horizon is invalid');
+      var hours = edgeInteger(
+        horizon.horizon_hours,
+        'data performance horizon hours',
+        1,
+        8760
+      );
+      edgeContract(!seenHours[hours], 'data performance horizon is duplicated');
+      seenHours[hours] = true;
+      edgeContract(
+        edgeInteger(horizon.total, 'data performance horizon total') <= total,
+        'data performance horizon total exceeds total'
+      );
+      edgeProbability(horizon.brier_score, 'data performance horizon brier');
+      edgeProbability(horizon.accuracy, 'data performance horizon accuracy');
+      if (Object.prototype.hasOwnProperty.call(horizon, 'calibration_error')) {
+        edgeProbability(horizon.calibration_error, 'data performance calibration');
+      }
+      if (Object.prototype.hasOwnProperty.call(horizon, 'bins')) {
+        edgeContract(
+          Array.isArray(horizon.bins) && horizon.bins.length <= 100,
+          'data performance bins are invalid'
+        );
+        horizon.bins.forEach(function (bin) {
+          edgeContract(isPlainObject(bin), 'data performance bin is invalid');
+          var start = edgeProbability(bin.bin_start, 'data performance bin start');
+          var end = edgeProbability(bin.bin_end, 'data performance bin end');
+          edgeContract(end >= start, 'data performance bin range is invalid');
+          edgeProbability(bin.predicted_mean, 'data performance bin prediction');
+          if (bin.actual_frequency !== null) {
+            edgeProbability(bin.actual_frequency, 'data performance bin actual');
+          }
+          edgeInteger(bin.count, 'data performance bin count');
+        });
+      }
+    });
+  }
+
+  function validateEdgeResetHistory(items) {
+    edgeContract(Array.isArray(items) && items.length <= 2000, 'data reset history is invalid');
+    items.forEach(function (item) {
+      edgeContract(isPlainObject(item), 'data reset item is invalid');
+      edgeTimestamp(item.reset_time, 'data reset time');
+      edgeString(item.source, 'data reset source', 64);
+      edgeProbability(item.confidence, 'data reset confidence');
+      edgeString(item.notes, 'data reset notes', 500);
+    });
+  }
+
+  function validateEdgeBundle(value, nowValue, maximumAgeMs) {
+    edgeContract(isPlainObject(value), 'data must be an object');
+    edgeContract(value.schema === 1, 'schema is unsupported');
+    edgeContract(
+      value.overall_status === 'ok' || value.overall_status === 'degraded',
+      'status is invalid'
+    );
+
+    var now = Number.isFinite(nowValue) ? nowValue : Date.now();
+    var maxAge = Number.isFinite(maximumAgeMs) && maximumAgeMs > 0
+      ? maximumAgeMs
+      : DEFAULT_EDGE_CONFIG.maxAgeSeconds * 1000;
+    var syncedAt = toTimestamp(value.synced_at);
+    edgeContract(syncedAt !== null, 'data synced_at is invalid');
+    edgeContract(syncedAt <= now + 5 * 60 * 1000, 'data timestamp is in the future');
+    edgeContract(now - syncedAt <= maxAge, 'data is stale');
+
+    edgeContract(Array.isArray(value.sources), 'status sources are missing');
+    edgeContract(value.sources.length === EDGE_SOURCE_NAMES.length, 'status source count is invalid');
+    var cachedSourceCount = 0;
+    var sourceNames = value.sources.map(function (source) {
+      edgeContract(isPlainObject(source), 'status source is invalid');
+      edgeContract(
+        source.status === 'fresh' || source.status === 'cached',
+        'status source is invalid'
+      );
+      if (source.status === 'cached') {
+        cachedSourceCount += 1;
+      }
+      return safeString(source.name);
+    }).sort();
+    edgeContract(
+      sourceNames.join('|') === EDGE_SOURCE_NAMES.slice().sort().join('|'),
+      'status source names are invalid'
+    );
+    edgeContract(
+      value.overall_status === 'degraded' ? cachedSourceCount > 0 : cachedSourceCount === 0,
+      'status does not match its sources'
+    );
+
+    edgeContract(isPlainObject(value.data), 'data payload is missing');
+    var dataKeys = Object.keys(value.data).sort();
+    edgeContract(
+      dataKeys.join('|') === EDGE_DATA_KEYS.slice().sort().join('|'),
+      'data keys are invalid'
+    );
+    var data = value.data;
+    validateEdgePredictionDocument(data.prediction);
+    validateEdgePredictionHistory(data.predictionHistory);
+    validateEdgeTweets(data.tweets, now);
+    validateEdgePerformance(data.performance);
+    validateEdgeResetHistory(data.resetHistory);
+
+    return {
+      prediction: data.prediction,
+      predictionHistory: data.predictionHistory,
+      tweets: data.tweets,
+      performance: data.performance,
+      resetHistory: data.resetHistory,
+      syncStatus: {
+        schema: 1,
+        synced_at: value.synced_at,
+        overall_status: value.overall_status,
+        sources: value.sources
+      }
+    };
+  }
+
+  function loadPagesSnapshot(fetchJsonImpl) {
+    return Promise.all(DATA_SOURCES.map(function (source) {
+      return Promise.resolve().then(function () {
+        return fetchJsonImpl(source, { kind: 'pages' });
+      });
+    })).then(function (values) {
+      var snapshot = {};
+      DATA_KEYS.forEach(function (key, index) {
+        snapshot[key] = values[index];
+      });
+      return snapshot;
+    });
+  }
+
+  function edgeFailure(error, now) {
+    var message = error && typeof error.message === 'string'
+      ? error.message
+      : 'edge request failed';
+    return {
+      status: 'failed',
+      checkedAt: new Date(now).toISOString(),
+      error: truncateText(message, 240)
+    };
+  }
+
+  function loadDataSnapshot(options) {
+    var settings = isPlainObject(options) ? options : {};
+    var config = normalizeEdgeConfig(settings.config);
+    var fetchJsonImpl = settings.fetchJson;
+    if (typeof fetchJsonImpl !== 'function') {
+      return Promise.reject(new Error('fetchJson dependency is required'));
+    }
+    var nowFunction = typeof settings.now === 'function' ? settings.now : Date.now;
+
+    function pagesResult(source, edgeHealth) {
+      return loadPagesSnapshot(fetchJsonImpl).then(function (raw) {
+        return {
+          raw: raw,
+          source: source,
+          edgeHealth: edgeHealth || { status: 'off', error: '' }
+        };
+      });
+    }
+
+    function edgeResult() {
+      return Promise.resolve().then(function () {
+        return fetchJsonImpl(config.edgeSnapshotUrl, {
+          kind: 'edge',
+          timeoutMs: config.timeoutMs
+        });
+      }).then(function (bundle) {
+        var checkedAt = Number(nowFunction());
+        var raw = validateEdgeBundle(
+          bundle,
+          checkedAt,
+          config.maxAgeSeconds * 1000
+        );
+        return {
+          raw: raw,
+          source: 'edge',
+          edgeHealth: {
+            status: 'ok',
+            checkedAt: new Date(checkedAt).toISOString(),
+            error: ''
+          }
+        };
+      });
+    }
+
+    if (config.edgeMode === 'off') {
+      return pagesResult('pages');
+    }
+    if (config.edgeMode === 'primary') {
+      return edgeResult().then(null, function (error) {
+        return pagesResult('pages-fallback', edgeFailure(error, Number(nowFunction())));
+      });
+    }
+
+    var shadowEdge = edgeResult().then(function (result) {
+      return result.edgeHealth;
+    }, function (error) {
+      return edgeFailure(error, Number(nowFunction()));
+    });
+    return Promise.all([loadPagesSnapshot(fetchJsonImpl), shadowEdge]).then(function (results) {
+      return {
+        raw: results[0],
+        source: 'pages',
+        edgeHealth: results[1]
+      };
+    });
+  }
+
   function classifySignal(item) {
     var signal = isPlainObject(item) ? item : {};
     var author = safeString(signal.author).toLowerCase();
@@ -504,7 +950,7 @@
       if (policy.authors && policy.authors.indexOf(author) === -1) {
         return null;
       }
-      return trustedUrlForHosts(signal.url, policy.hosts) ? category : null;
+      return trustedSignalPolicyUrl(signal, category) ? category : null;
     }
     return null;
   }
@@ -1124,6 +1570,16 @@
     pulse.setAttribute('aria-hidden', 'true');
     element.appendChild(pulse);
     element.appendChild(createElement('span', '', translate(presentation.key, state.language, presentation.values)));
+    var sourceKeys = {
+      edge: 'status.sourceEdge',
+      'pages-fallback': 'status.sourcePagesFallback',
+      pages: 'status.sourcePages'
+    };
+    element.appendChild(createElement(
+      'span',
+      'data-source-label',
+      ' · ' + translate(sourceKeys[state.dataSource] || sourceKeys.pages)
+    ));
 
     var details = byId('sync-status-details');
     if (details) {
@@ -1305,12 +1761,44 @@
     }
   }
 
+  function trustedSignalPolicyUrl(item, category) {
+    var signal = isPlainObject(item) ? item : {};
+    var policy = SIGNAL_POLICIES[category];
+    if (!policy) {
+      return null;
+    }
+    var url = trustedUrlForHosts(signal.url, policy.hosts);
+    if (!url) {
+      return null;
+    }
+    try {
+      var parsed = new URL(url);
+      var hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
+      if (category === 'tibo') {
+        return /^(?:x\.com|(?:www\.)?twitter\.com)$/.test(hostname)
+          && /^\/thsottiaux\/status\/\d+\/?$/i.test(parsed.pathname)
+          ? url
+          : null;
+      }
+      if (category === 'openai' && (
+        hostMatchesPolicy(hostname, 'x.com') || hostMatchesPolicy(hostname, 'twitter.com')
+      )) {
+        return /^\/(?:openai|openaidevs|chatgptapp)\/status\/\d+\/?$/i.test(parsed.pathname)
+          ? url
+          : null;
+      }
+      return url;
+    } catch (error) {
+      return null;
+    }
+  }
+
   function trustedSignalUrl(item, expectedCategory) {
     var category = classifySignal(item);
     if (!category || category !== expectedCategory) {
       return null;
     }
-    return trustedUrlForHosts(item.url, SIGNAL_POLICIES[category].hosts);
+    return trustedSignalPolicyUrl(item, category);
   }
 
   function signalLabel(category) {
@@ -1506,16 +1994,53 @@
     return state.language;
   }
 
-  function fetchJson(relativePath) {
+  function fetchJson(relativePath, options) {
     if (!root || typeof root.fetch !== 'function') {
       return Promise.reject(new Error('Fetch API unavailable'));
     }
-    return root.fetch(relativePath, { cache: 'no-store' }).then(function (response) {
+    var settings = isPlainObject(options) ? options : {};
+    var timeoutMs = Number(settings.timeoutMs);
+    var AbortControllerConstructor = root.AbortController;
+    var controller = Number.isFinite(timeoutMs) && timeoutMs > 0 && typeof AbortControllerConstructor === 'function'
+      ? new AbortControllerConstructor()
+      : null;
+    var timer = null;
+    if (controller && typeof root.setTimeout === 'function') {
+      timer = root.setTimeout(function () { controller.abort(); }, timeoutMs);
+    }
+    var requestOptions = { cache: 'no-store' };
+    if (controller) {
+      requestOptions.signal = controller.signal;
+    }
+    return root.fetch(relativePath, requestOptions).then(function (response) {
       if (!response.ok) {
         throw new Error('HTTP ' + response.status + ' for ' + relativePath);
       }
       return response.json();
+    }).finally(function () {
+      if (timer !== null && typeof root.clearTimeout === 'function') {
+        root.clearTimeout(timer);
+      }
     });
+  }
+
+  function loadRuntimeEdgeConfig() {
+    if (state.configPromise) {
+      return state.configPromise;
+    }
+    state.configPromise = fetchJson(EDGE_CONFIG_SOURCE, { timeoutMs: 3000 }).then(
+      normalizeEdgeConfig,
+      function () { return DEFAULT_EDGE_CONFIG; }
+    ).then(function (config) {
+      state.edgeConfig = config;
+      state.edgeHealth = config.edgeMode === 'off'
+        ? { status: 'off', error: '' }
+        : state.edgeHealth;
+      return config;
+    }).finally(function () {
+      state.configPromise = null;
+    });
+    return state.configPromise;
   }
 
   function processNotificationCrossings() {
@@ -1559,28 +2084,31 @@
     }
     updateRefreshButton(true);
     setFeedback('feedback.refreshing');
-    var requests = DATA_SOURCES.map(fetchJson);
-    state.loadingPromise = Promise.allSettled(requests).then(function (results) {
-      var failures = [];
-      results.forEach(function (result, index) {
-        if (result.status === 'fulfilled') {
-          state.raw[DATA_KEYS[index]] = result.value;
-        } else {
-          failures.push(DATA_SOURCES[index]);
-        }
-      });
-      state.loadFailures = failures;
+    state.loadingPromise = loadDataSnapshot({
+      config: state.edgeConfig,
+      fetchJson: fetchJson,
+      now: Date.now
+    }).then(function (result) {
+      state.raw = result.raw;
+      state.dataSource = result.source;
+      state.edgeHealth = result.edgeHealth;
+      state.loadFailures = [];
       state.lastLoadAt = Date.now();
       state.model = normalizeViewModel(state.raw, state.lastLoadAt);
       renderAll();
       var notificationResult = processNotificationCrossings();
+      var refreshedKey = result.source === 'edge'
+        ? 'feedback.refreshedEdge'
+        : (result.source === 'pages-fallback'
+          ? 'feedback.refreshedPagesFallback'
+          : 'feedback.refreshed');
       setFeedback(
         notificationResult && notificationResult.failed.length
           ? 'feedback.notifyError'
-          : (failures.length ? 'feedback.partial' : 'feedback.refreshed')
+          : refreshedKey
       );
       return state.model;
-    }).catch(function () {
+    }).catch(function (error) {
       state.loadFailures = DATA_SOURCES.slice();
       state.lastLoadAt = Date.now();
       state.model = normalizeViewModel(state.raw, state.lastLoadAt);
@@ -1747,12 +2275,14 @@
     renderAll();
     bindEvents();
     startIntervals();
-    refreshData();
+    loadRuntimeEdgeConfig().then(refreshData);
   }
 
   return Object.freeze({
     I18N: I18N,
     DATA_SOURCES: DATA_SOURCES,
+    DEFAULT_EDGE_CONFIG: DEFAULT_EDGE_CONFIG,
+    REFRESH_INTERVAL_MS: REFRESH_INTERVAL_MS,
     chooseLanguage: chooseLanguage,
     readStoredLanguage: readStoredLanguage,
     persistLanguage: persistLanguage,
@@ -1775,6 +2305,9 @@
     truncateText: truncateText,
     safeHttpsUrl: safeHttpsUrl,
     trustedSignalUrl: trustedSignalUrl,
+    normalizeEdgeConfig: normalizeEdgeConfig,
+    validateEdgeBundle: validateEdgeBundle,
+    loadDataSnapshot: loadDataSnapshot,
     legacyCopy: legacyCopy,
     copyText: copyText,
     isStale: isStale,

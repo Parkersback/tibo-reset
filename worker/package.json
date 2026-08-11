@@ -1,0 +1,14 @@
+{
+  "name": "tibo-reset-data-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/index.js && node --check src/config.js && node --check src/validators.js",
+    "deploy": "wrangler deploy --config wrangler.jsonc"
+  },
+  "devDependencies": {
+    "wrangler": "4.120.1"
+  }
+}

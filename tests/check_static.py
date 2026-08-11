@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 import sys
 from typing import Any
+from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +16,7 @@ REQUIRED_FILES = (
     "app.js",
     "favicon.svg",
     "health.json",
+    "edge-config.json",
 )
 REQUIRED_DATA_PATHS = (
     "data/prediction.json",
@@ -38,6 +40,7 @@ REQUIRED_LANGUAGE_KEYS = (
 )
 REQUIRED_APP_TOKENS = (
     "tibo-reset-language",
+    "./edge-config.json",
     "./data/prediction.json",
     "./data/prediction_history.json",
     "./data/tweets.json",
@@ -97,6 +100,46 @@ def matches_expected_health(value: Any) -> bool:
     )
 
 
+def matches_edge_config(value: Any) -> bool:
+    if type(value) is not dict or set(value) != {
+        "schema",
+        "edgeMode",
+        "edgeSnapshotUrl",
+        "timeoutMs",
+        "maxAgeSeconds",
+    }:
+        return False
+    if type(value["schema"]) is not int or value["schema"] != 1:
+        return False
+    if value["edgeMode"] not in {"off", "shadow", "primary"}:
+        return False
+    if type(value["timeoutMs"]) is not int or not 500 <= value["timeoutMs"] <= 15_000:
+        return False
+    if (
+        type(value["maxAgeSeconds"]) is not int
+        or not 60 <= value["maxAgeSeconds"] <= 3_600
+    ):
+        return False
+    snapshot_url = value["edgeSnapshotUrl"]
+    if type(snapshot_url) is not str:
+        return False
+    if value["edgeMode"] == "off":
+        return snapshot_url == ""
+    try:
+        parsed = urlsplit(snapshot_url)
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "https"
+        and bool(parsed.hostname)
+        and parsed.username is None
+        and parsed.password is None
+        and parsed.query == ""
+        and parsed.fragment == ""
+        and parsed.path == "/v1/bundle.json"
+    )
+
+
 def main() -> int:
     errors: list[str] = []
 
@@ -134,6 +177,14 @@ def main() -> int:
         loaded, health = load_json(health_path, "site/health.json", errors)
         if loaded and not matches_expected_health(health):
             errors.append("health object mismatch in site/health.json")
+
+    edge_config_path = SITE / "edge-config.json"
+    if edge_config_path.is_file():
+        loaded, edge_config = load_json(
+            edge_config_path, "site/edge-config.json", errors
+        )
+        if loaded and not matches_edge_config(edge_config):
+            errors.append("edge config mismatch in site/edge-config.json")
 
     for relative_path in REQUIRED_DATA_PATHS:
         data_path = SITE / relative_path

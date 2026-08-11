@@ -1,0 +1,33 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tibo-reset-data-mirror",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-11",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  },
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "DATA_MIRROR",
+      "id": "ea85a04501b0417aa9375cb04237c77a"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "REFRESH_COORDINATOR",
+        "class_name": "RefreshCoordinator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RefreshCoordinator"]
+    }
+  ]
+}

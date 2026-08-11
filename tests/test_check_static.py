@@ -47,6 +47,7 @@ class StaticContractTests(unittest.TestCase):
             """
 const messages = {"zh-CN": {}, "en": {}};
 const storageKey = "tibo-reset-language";
+const edgeConfig = "./edge-config.json";
 const sources = [
   "./data/prediction.json",
   "./data/prediction_history.json",
@@ -60,6 +61,19 @@ const sources = [
         (self.site / "health.json").write_text(
             json.dumps(
                 {"app": "tibo-reset", "status": "ok", "schema": 1},
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        (self.site / "edge-config.json").write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "edgeMode": "off",
+                    "edgeSnapshotUrl": "",
+                    "timeoutMs": 4000,
+                    "maxAgeSeconds": 420,
+                },
                 separators=(",", ":"),
             ),
             encoding="utf-8",
@@ -136,6 +150,25 @@ const sources = [
 
         self.assertEqual(1, result)
         self.assertIn("missing required file: site/data/prediction.json", output)
+
+    def test_edge_config_rejects_active_mode_without_exact_https_bundle_path(self) -> None:
+        (self.site / "edge-config.json").write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "edgeMode": "primary",
+                    "edgeSnapshotUrl": "https://edge.example.test/not-the-bundle",
+                    "timeoutMs": 4000,
+                    "maxAgeSeconds": 420,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result, output = self._run_check()
+
+        self.assertEqual(1, result)
+        self.assertIn("edge config mismatch in site/edge-config.json", output)
 
     def test_invalid_data_json_is_reported_without_exception(self) -> None:
         (self.site / REQUIRED_DATA_PATHS[0]).write_text(

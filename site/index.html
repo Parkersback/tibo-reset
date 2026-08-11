@@ -81,7 +81,7 @@
             id="refresh-button"
             class="icon-button"
             type="button"
-            aria-label="刷新本地镜像数据"
+            aria-label="刷新预测镜像数据"
             data-i18n-aria-label="actions.refreshLabel"
           >
             <span class="refresh-symbol" aria-hidden="true"></span>
@@ -497,9 +497,9 @@
         <div class="methodology-grid">
           <article class="method-card method-card--wide">
             <span class="method-number">01</span>
-            <h3 data-i18n="methodology.mirrorTitle">本地镜像，不直连社交平台</h3>
+            <h3 data-i18n="methodology.mirrorTitle">双层镜像，不直连社交平台</h3>
             <p data-i18n="methodology.body">
-              本站定时镜像第三方项目已公开的预测、信号、表现与历史 JSON，访客只会读取本站的相对路径数据。
+              本站定时镜像公开数据；优先读取边缘快照，异常时整份回退 Pages 镜像。
             </p>
           </article>
           <article class="method-card">
@@ -533,12 +533,12 @@
 
     <footer class="site-footer">
       <p><strong>ChatGPT 会不会重置？</strong> <span data-i18n="footer.note">— 在深夜里，把不确定性看得更清楚。</span></p>
-      <p class="footer-status"><span aria-hidden="true"></span><span data-i18n="footer.localData">仅读取本站镜像数据</span></p>
+      <p class="footer-status"><span aria-hidden="true"></span><span data-i18n="footer.localData">读取本站边缘或 Pages 镜像</span></p>
     </footer>
 
     <noscript>
       <div class="noscript-banner" data-i18n="noscript.message">
-        JavaScript 未启用：页面骨架仍可阅读，但实时概率、倒计时和信号不会更新。
+        JavaScript 未启用：页面骨架仍可阅读，但动态概率、倒计时和信号不会更新。
       </div>
     </noscript>
   </body>
