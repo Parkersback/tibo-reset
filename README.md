@@ -8,7 +8,7 @@
 
 ## 当前状态与截图
 
-功能代码、本地启动器与 GitHub Pages 部署均已完成。Playwright 桌面端与移动端截图已生成在本机 `output/playwright/`（该 QA 目录不进入发布包）；原创主视觉随站点发布在 `site/assets/reset-oracle-card.webp`。
+功能代码、本地启动器与 GitHub Pages 部署均已完成。Playwright 桌面端与移动端截图已生成在本机 `output/playwright/`（该 QA 目录不进入发布包）；融合 Tibo 面部参考的原创主视觉随站点发布在 `site/assets/reset-oracle-card-tibo.webp`。
 
 线上地址是 <https://parkersback.github.io/tibo-reset/>；每次发布仍需以 GitHub Actions 成功和线上 HTTP 200 验证为准。
 

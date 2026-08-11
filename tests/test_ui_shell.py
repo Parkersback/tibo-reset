@@ -200,8 +200,9 @@ class ObservatoryShellTests(unittest.TestCase):
     def test_oracle_hero_uses_a_local_original_card_asset(self) -> None:
         tag, attrs = self.parser.by_id("reset-oracle-art")
         self.assertEqual("img", tag)
-        self.assertEqual("assets/reset-oracle-card.webp", attrs.get("src"))
+        self.assertEqual("assets/reset-oracle-card-tibo.webp", attrs.get("src"))
         self.assertTrue(attrs.get("alt"))
+        self.assertIn("Tibo", attrs.get("alt"))
         self.assertEqual("1024", attrs.get("width"))
         self.assertEqual("1536", attrs.get("height"))
         asset = SITE / attrs["src"]
@@ -224,6 +225,8 @@ class ObservatoryShellTests(unittest.TestCase):
         ):
             self.assertIn(selector, self.css)
         self.assertIn("ChatGPT 会不会重置？", self.html)
+        self.assertNotIn("读取信号，不许愿", self.html)
+        self.assertIn("公开信号 · 历史节奏 · 非官方预测", self.html)
 
     def test_forecast_shell_has_real_fallback_content(self) -> None:
         for horizon in ("5h", "24h", "48h"):
