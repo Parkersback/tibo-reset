@@ -209,6 +209,24 @@ class ObservatoryShellTests(unittest.TestCase):
         self.assertTrue(asset.is_file(), "oracle card must ship with the site")
         self.assertLess(asset.stat().st_size, 1_500_000)
 
+    def test_oracle_card_plaque_asks_the_reset_question(self) -> None:
+        self.assertRegex(
+            self.html,
+            r'<span\s+class="oracle-card-question"\s+lang="en">'
+            r'WILL TIBO RESET\?</span>',
+        )
+        self.assertIn(".oracle-card-question", self.css)
+        question_rule = re.search(
+            r"\.oracle-card-question\s*\{(?P<body>.*?)\}",
+            self.css,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(question_rule)
+        body = question_rule.group("body")
+        self.assertIn("position: absolute", body)
+        self.assertIn("text-align: center", body)
+        self.assertIn("white-space: nowrap", body)
+
     def test_oracle_art_direction_is_explicit_not_generic_glass(self) -> None:
         for token in (
             "--color-gold",
