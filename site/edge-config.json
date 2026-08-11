@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "edgeMode": "shadow",
+  "edgeMode": "primary",
   "edgeSnapshotUrl": "https://tibo-reset-data-mirror.tibo-reset-data-worker.workers.dev/v1/bundle.json",
   "timeoutMs": 4000,
   "maxAgeSeconds": 420
