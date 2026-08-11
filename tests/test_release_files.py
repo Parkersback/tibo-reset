@@ -38,7 +38,7 @@ class ReadmeContractTests(unittest.TestCase):
     def test_product_boundary_and_disclaimer_are_explicit(self) -> None:
         for token in (
             "非官方",
-            "额度重置预测仪表盘",
+            "额度重置预测站",
             "OpenAI",
             "Thibault Sottiaux",
             "无隶属或背书",
@@ -53,7 +53,7 @@ class ReadmeContractTests(unittest.TestCase):
         ):
             self.assertIn(token, self.readme)
 
-        self.assertRegex(self.readme, r"截图.{0,40}(?:尚未|待 Task 7)")
+        self.assertRegex(self.readme, r"截图.{0,60}(?:已生成|Playwright)")
 
     def test_local_operation_and_direct_commands_are_documented(self) -> None:
         for token in (

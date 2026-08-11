@@ -1,6 +1,6 @@
-# Tibo Reset
+# ChatGPT 会不会重置？
 
-`Tibo Reset` 是一个非官方的 ChatGPT/Codex 额度重置预测仪表盘。它把第三方项目公开的 JSON 镜像到本地静态站点，以中英双语界面展示 5h / 24h / 48h 概率、信号与历史。
+`ChatGPT 会不会重置？` 是一个非官方的 ChatGPT/Codex 额度重置预测站。它把第三方项目公开的 JSON 镜像到本地静态站点，以中英双语界面展示 5h / 24h / 48h 概率、信号与历史；主视觉采用原创的“鎏金科技塔罗 × 重置神谕”设计。
 
 > 本站关注的是可能发生的**额外全局 hard reset**。常规的 `weekly reset`、`banked reset` 与 `boost/unlock` 是不同机制，不能当作同一种事件解读。
 
@@ -8,9 +8,9 @@
 
 ## 当前状态与截图
 
-功能代码和本地启动器已经包含在仓库中。截图尚未生成，待 Task 7 完成桌面端与移动端视觉验收后补充；这里不放置伪造的成品图或线上状态。
+功能代码、本地启动器与 GitHub Pages 部署均已完成。Playwright 桌面端与移动端截图已生成在本机 `output/playwright/`（该 QA 目录不进入发布包）；原创主视觉随站点发布在 `site/assets/reset-oracle-card.webp`。
 
-计划中的 GitHub Pages 地址是 <https://parkersback.github.io/tibo-reset/>。在 Task 7 实际创建仓库、部署并验证 HTTP 200 前，此地址只代表计划入口，不表示已经上线。
+线上地址是 <https://parkersback.github.io/tibo-reset/>；每次发布仍需以 GitHub Actions 成功和线上 HTTP 200 验证为准。
 
 ## 功能
 
@@ -107,7 +107,7 @@ node --check site/app.js
 
 工作流使用 Python 3.13，先执行同步命令，再读取 `site/data/sync-status.json`。只有 `overall_status` 严格等于 `ok` 才继续；即使同步器因存在旧缓存而返回成功，`degraded` 或 cached 降级也会让 job 非零退出，保留上一版 Pages，不允许仓库旧缓存覆盖更新的线上版本。fresh gate 通过后仍需完成单元测试、静态合同和 Node 语法检查，最后才上传 `./site`。工作流不提交数据、不执行 `git push`、不需要仓库 secrets，也不访问 X API。
 
-首次公开发布需要在仓库 Pages 设置中选择 **GitHub Actions** 作为来源，实际建仓与线上验证属于 Task 7。GitHub 可能在仓库长期无活动后自动停用计划工作流；维护者应检查 Actions 状态，并可用 `workflow_dispatch` 手动刷新与部署。
+仓库 Pages 来源已使用 **GitHub Actions**。GitHub 可能在仓库长期无活动后自动停用计划工作流；维护者应检查 Actions 状态，并可用 `workflow_dispatch` 手动刷新与部署。
 
 ## 免责声明与归属
 

@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta
       name="description"
-      content="Tibo Reset 是一个非官方的 ChatGPT 与 Codex 额度重置概率观测站。"
+      content="ChatGPT 会不会重置？一个把公开信号、历史节奏与行动建议放在一起的非官方额度重置预测站。"
       data-i18n-content="meta.description"
     >
-    <meta name="theme-color" content="#080b22">
-    <title data-i18n="meta.title">Tibo Reset · 深夜重置气象台</title>
+    <meta name="theme-color" content="#090705">
+    <title data-i18n="meta.title">ChatGPT 会不会重置？· 重置神谕</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="styles.css">
     <script src="app.js" defer></script>
@@ -29,16 +29,16 @@
         <a
           class="brand"
           href="#forecast"
-          aria-label="Tibo Reset 首页"
+          aria-label="ChatGPT 会不会重置？首页"
           data-i18n-aria-label="brand.homeLabel"
         >
           <span class="brand-mark" aria-hidden="true">
             <span class="brand-mark__sweep"></span>
-            <span class="brand-mark__letter">T</span>
+            <span class="brand-mark__letter">?</span>
           </span>
           <span class="brand-copy">
-            <strong id="brand-name">Tibo Reset</strong>
-            <span data-i18n="brand.tagline">深夜重置气象台</span>
+            <strong id="brand-name" data-i18n="brand.name">ChatGPT 会不会重置？</strong>
+            <span data-i18n="brand.tagline">重置神谕 · 非官方预测</span>
           </span>
         </a>
 
@@ -105,15 +105,17 @@
 
     <main id="main-content">
       <section id="forecast" class="page-section forecast-section" aria-labelledby="forecast-title">
-        <div class="section-intro section-intro--hero">
-          <p class="eyebrow" data-i18n="forecast.eyebrow">RESET WEATHER / 001</p>
-          <h1 id="forecast-title" data-i18n="forecast.title">今夜，额度会重置吗？</h1>
-          <p class="section-lede" data-i18n="forecast.subtitle">
-            综合公开信号与历史间隔，观测额外全局 hard reset 的可能性。
-          </p>
-        </div>
+        <div class="oracle-hero">
+          <div class="oracle-hero__content">
+            <div class="section-intro section-intro--hero">
+              <p class="eyebrow" data-i18n="forecast.eyebrow">THE RESET ORACLE / 001</p>
+              <h1 id="forecast-title" data-i18n="forecast.title">ChatGPT 会不会重置？</h1>
+              <p class="section-lede" data-i18n="forecast.subtitle">
+                读懂 Tibo 的公开信号与历史节奏，判断现在该烧额度，还是再等等。
+              </p>
+            </div>
 
-        <div class="station-grid forecast-layout">
+            <div class="station-grid forecast-layout">
           <article class="glass-panel primary-forecast" aria-labelledby="primary-gauge-label">
             <div class="panel-coordinate" aria-hidden="true">
               <span>OBS-24</span>
@@ -227,7 +229,34 @@
             <p id="action-feedback" class="action-feedback" role="status" aria-live="polite" aria-atomic="true">
               <span data-i18n="feedback.ready">操作台已就绪</span>
             </p>
-          </aside>
+              </aside>
+            </div>
+          </div>
+
+          <figure class="oracle-visual">
+            <div class="oracle-halo" aria-hidden="true"></div>
+            <div class="oracle-card-frame">
+              <img
+                id="reset-oracle-art"
+                src="assets/reset-oracle-card.webp"
+                width="1024"
+                height="1536"
+                alt="一位虚构的重置神谕者手持红色 RESET 按钮的鎏金科技塔罗牌"
+                data-i18n-alt="forecast.oracleAlt"
+                decoding="async"
+                fetchpriority="high"
+              >
+              <span class="oracle-card-shine" aria-hidden="true"></span>
+            </div>
+            <figcaption class="oracle-caption">
+              <span class="oracle-seal" aria-hidden="true">R</span>
+              <span>
+                <strong data-i18n="forecast.oracleTitle">THE RESET ORACLE</strong>
+                <small data-i18n="forecast.oracleCaption">读取信号，不许愿；看见概率，再做决定。</small>
+              </span>
+            </figcaption>
+            <span class="oracle-index" aria-hidden="true">ARCANA · 01</span>
+          </figure>
         </div>
       </section>
 
@@ -496,14 +525,14 @@
         >
           <span class="disclaimer__mark" aria-hidden="true">!</span>
           <p data-i18n="methodology.disclaimer">
-            Tibo Reset 是非官方、仅供娱乐与信息参考的观测工具，与 OpenAI、Thibault Sottiaux 及上游参考站均无隶属、授权或背书关系。
+            ChatGPT 会不会重置？是非官方、仅供娱乐与信息参考的观测工具，与 OpenAI、Thibault Sottiaux 及上游参考站均无隶属、授权或背书关系。
           </p>
         </aside>
       </section>
     </main>
 
     <footer class="site-footer">
-      <p><strong>Tibo Reset</strong> <span data-i18n="footer.note">— 在深夜里，把不确定性看得更清楚。</span></p>
+      <p><strong>ChatGPT 会不会重置？</strong> <span data-i18n="footer.note">— 在深夜里，把不确定性看得更清楚。</span></p>
       <p class="footer-status"><span aria-hidden="true"></span><span data-i18n="footer.localData">仅读取本站镜像数据</span></p>
     </footer>
 

@@ -195,7 +195,35 @@ class ObservatoryShellTests(unittest.TestCase):
     def test_all_core_labels_have_translation_hooks(self) -> None:
         missing = REQUIRED_I18N_KEYS - self.parser.i18n_keys
         self.assertFalse(missing, f"missing data-i18n hooks: {sorted(missing)}")
-        self.assertEqual("Tibo Reset", self.parser.text("brand-name"))
+        self.assertEqual("ChatGPT 会不会重置？", self.parser.text("brand-name"))
+
+    def test_oracle_hero_uses_a_local_original_card_asset(self) -> None:
+        tag, attrs = self.parser.by_id("reset-oracle-art")
+        self.assertEqual("img", tag)
+        self.assertEqual("assets/reset-oracle-card.webp", attrs.get("src"))
+        self.assertTrue(attrs.get("alt"))
+        self.assertEqual("1024", attrs.get("width"))
+        self.assertEqual("1536", attrs.get("height"))
+        asset = SITE / attrs["src"]
+        self.assertTrue(asset.is_file(), "oracle card must ship with the site")
+        self.assertLess(asset.stat().st_size, 1_500_000)
+
+    def test_oracle_art_direction_is_explicit_not_generic_glass(self) -> None:
+        for token in (
+            "--color-gold",
+            "--color-gold-pale",
+            "--color-vermilion",
+            "--surface-lacquer",
+        ):
+            self.assertIn(token, self.css)
+        for selector in (
+            ".oracle-hero",
+            ".oracle-visual",
+            ".oracle-card-frame",
+            ".oracle-seal",
+        ):
+            self.assertIn(selector, self.css)
+        self.assertIn("ChatGPT 会不会重置？", self.html)
 
     def test_forecast_shell_has_real_fallback_content(self) -> None:
         for horizon in ("5h", "24h", "48h"):
